@@ -1,0 +1,16 @@
+*.py[co]
+__pycache__/
+.cache/
+*.egg-info/
+.eggs/
+.coverage*
+htmlcov/
+
+/.idea/
+*~
+*.sw[ponm]
+
+/env/
+/tmp/
+/vars_*
+/tests/variables_*

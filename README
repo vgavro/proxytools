@@ -1,0 +1,15 @@
+proxy checker/fetcher:
+https://github.com/DanMcInerney/elite-proxy-finder
+https://github.com/stamparm/fetch-some-proxies
+
+proxymanager docs:
+http://urllib3.readthedocs.io/en/latest/advanced-usage.html
+
+requests adapter source:
+https://github.com/requests/requests/blob/master/requests/adapters.py
+
+requests-toolbelt adapters:
+https://github.com/requests/toolbelt/tree/master/requests_toolbelt/adapters
+
+for checking proxy headers and external ip:
+https://httpbin.org/get
