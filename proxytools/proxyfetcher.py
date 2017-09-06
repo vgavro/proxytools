@@ -53,7 +53,7 @@ class MultiProxyFetcher(AbstractProxyFetcher):
 
 class ProxyFetcher(AbstractProxyFetcher):
     def __init__(self, add=None, pool=None, pool_size=10, session=None,
-                 types=None, countries=None, anonymities=None, succeed_since=None):
+                 types=None, countries=None, anonymities=None, succeed_delta=None):
         self.pool = pool or gevent.pool.Pool(pool_size)
         self.add = add or self.add
         self.workers = gevent.pool.Group()
@@ -61,7 +61,7 @@ class ProxyFetcher(AbstractProxyFetcher):
         self.types = types
         self.countries = countries
         self.anonymities = anonymities
-        # TODO: add succeed_since and add to self.filter
+        self.succeed_delta = succeed_delta
 
         self.session = session or self.create_session()
 
@@ -87,12 +87,15 @@ class ProxyFetcher(AbstractProxyFetcher):
                                          'Chrome/59.0.3071.86 Safari/537.36')
         return session
 
-    def filter(self, proxy):
+    def filter(self, proxy, now=None):
+        now = now or datetime.utcnow()
         if self.countries and proxy.country not in self.countries:
             return False
         if self.anonymities and proxy.anonymity not in self.anonymities:
             return False
         if self.types and proxy.type not in self.types:
+            return False
+        if (self.succeed_delta and proxy.succeed_at < (now - self.succeed_delta)):
             return False
         return True
 
@@ -100,7 +103,7 @@ class ProxyFetcher(AbstractProxyFetcher):
         now = datetime.utcnow()
         for proxy in worker(*args, **kwargs):
             assert isinstance(proxy, Proxy)
-            if self.filter(proxy):
+            if self.filter(proxy, now=now):
                 proxy.fetched_at = now
                 proxy.fetched_sources.add(self.name)
                 proxy.types = set(proxy.types)

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from ..proxyfetcher import ProxyFetcher, Proxy
 from ..utils import country_name_to_alpha2
 
@@ -16,8 +18,11 @@ class HidesterProxyFetcher(ProxyFetcher):
         resp = self.session.get(self.URL, headers={'Referer': self.REFERER})
         resp.raise_for_status()
         for proxy in resp.json():
-            types = [Proxy.TYPE[proxy['type'].upper()]]
-            # NOTE: hidester just doesn't show if it's HTTPS or not
-            yield Proxy('{type}://{IP}:{PORT}'.format(**proxy), types=types,
-                        country=country_name_to_alpha2(proxy['country']),
-                        anonymity=self.ANONYMITY_MAP[proxy['anonymity']])
+            yield Proxy(
+                '{type}://{IP}:{PORT}'.format(**proxy),
+                # NOTE: hidester just doesn't show if it's HTTPS or not
+                types=[Proxy.TYPE[proxy['type'].upper()]],
+                country=country_name_to_alpha2(proxy['country']),
+                anonymity=self.ANONYMITY_MAP[proxy['anonymity']],
+                succeed_at=datetime.utcfromtimestamp(int(proxy['latest_check']))
+            )
