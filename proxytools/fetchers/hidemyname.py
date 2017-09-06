@@ -55,7 +55,6 @@ class HidemyNameProxyFetcher(ProxyFetcher):
 
             for regexp in self.TIME_REGEXPS:
                 match = regexp.match(tr[6].text)
-
                 if match:
                     succeed_at = datetime.utcnow() - timedelta(hours=int(match.group(1) or 0),
                                                                minutes=int(match.group(2)))
