@@ -1,3 +1,5 @@
+import re
+from datetime import datetime, timedelta
 from lxml import html
 
 from ..proxyfetcher import ProxyFetcher, Proxy
@@ -12,6 +14,9 @@ class HidemyNameProxyFetcher(ProxyFetcher):
         'Low': Proxy.ANONYMITY.ANONYMOUS,
         'No': Proxy.ANONYMITY.TRANSPARENT,
     }
+
+    TIME_REGEXPS = (re.compile('()(\d+) minute?s'),
+                    re.compile('(\d+) h\. (\d+) min\.'))
 
     def __init__(self, *args, pages=None, **kwargs):
         self.pages = pages
@@ -48,5 +53,15 @@ class HidemyNameProxyFetcher(ProxyFetcher):
             assert _span_cls[-3] == '-', _span_cls
             country = _span_cls[-2:].upper()
 
-            yield Proxy(tr[0].text + ':' + tr[1].text, types=types,
+            for regexp in self.TIME_REGEXPS:
+                match = regexp.match(tr[6].text)
+
+                if match:
+                    succeed_at = datetime.utcnow() - timedelta(hours=int(match.group(1) or 0),
+                                                               minutes=int(match.group(2)))
+                    break
+            else:
+                raise AssertionError('time not matched:{}'.format(tr[6].text))
+
+            yield Proxy(tr[0].text + ':' + tr[1].text, types=types, succeed_at=succeed_at,
                         country=country, anonymity=self.ANONYMITY_MAP[tr[5].text])

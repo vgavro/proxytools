@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from ..proxyfetcher import ProxyFetcher, Proxy
 from ..utils import get_country_alpha_2_by_name  # noqa
 
@@ -20,6 +22,8 @@ class HidesterProxyFetcher(ProxyFetcher):
             if proxy['type'] == 'http':
                 # it's better to check it?
                 types.append(Proxy.TYPE.HTTPS)
+
             yield Proxy('{type}://{IP}:{PORT}'.format(**proxy), types=types,
                         country=get_country_alpha_2_by_name(proxy['country']),
-                        anonymity=self.ANONYMITY_MAP[proxy['anonymity']])
+                        anonymity=self.ANONYMITY_MAP[proxy['anonymity']],
+                        succeed_at=datetime.utcfromtimestamp(int(proxy['latest_check'])))
