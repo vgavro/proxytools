@@ -1,15 +1,16 @@
 from abc import ABCMeta, abstractmethod, abstractproperty
 from datetime import datetime
-
-# TOOD: move it in other place
-# from gevent import monkey  # noqa
-# monkey.patch_all()  # noqa
+from collections import OrderedDict
+import sys
+import os
+import json
 
 import gevent
 import gevent.pool
+import click
 
 from .models import Proxy
-from .utils import classproperty
+from .utils import classproperty, gevent_monkey_patch
 
 
 class AbstractProxyFetcher(metaclass=ABCMeta):
@@ -95,13 +96,14 @@ class ProxyFetcher(AbstractProxyFetcher):
             return False
         return True
 
-    def process_worker(self, worker, *args):
+    def process_worker(self, worker, *args, **kwargs):
         now = datetime.utcnow()
-        for proxy in worker(*args):
+        for proxy in worker(*args, **kwargs):
             assert isinstance(proxy, Proxy)
             if self.filter(proxy):
                 proxy.fetched_at = now
                 proxy.fetched_sources.add(self.name)
+                proxy.types = set(proxy.types)
                 self.add(proxy)
 
     def spawn(self, worker, *args, **kwargs):
@@ -112,20 +114,39 @@ class ProxyFetcher(AbstractProxyFetcher):
         raise NotImplementedError()
 
 
-def main():
-    from .utils import gevent_monkey_patch
+@click.command()
+@click.option('-c', '--config', default=None, help='YAML config file.',
+              envvar=['PROXYFETCHER_CONFIG', 'PROXYTOOLS_CONFIG'])
+@click.option('-o', '--override', default=None,
+              help='YAML config override string (will be merged with file if supplied).')
+@click.option('-s', '--save', default=None, help='Save proxies to file (JSON).')
+@click.option('-p', '--print', is_flag=True, help='Print proxies to stdout.')
+def main(config, override, save, print):
+    if not any((save, print)):
+        raise click.BadArgumentUsage('You must supply --save or --print arguments.')
+
     gevent_monkey_patch()
     from .fetchers.hidester import HidesterProxyFetcher
-    # from .fetchers.hidemyname import HidemyNameProxyFetcher
-    import pickle
+    from .fetchers.hidemyname import HidemyNameProxyFetcher
 
-    proxies = []
+    proxies = OrderedDict()
 
     def add(proxy):
-        print(proxy)
-        proxies.append(proxy)
+        if print:
+            sys.stdout.write(str(proxy) + os.linesep)
+            sys.stdout.flush()
+        if proxy.url in proxies:
+            proxies[proxy.url].merge_meta(proxy)
+        else:
+            proxies[proxy.url] = proxy
 
-    fetcher = MultiProxyFetcher([HidesterProxyFetcher()],  # HidemyNameProxyFetcher()],
-                                add=add)
+    fetchers = [
+        HidesterProxyFetcher(),
+        HidemyNameProxyFetcher()
+    ]
+    fetcher = MultiProxyFetcher(fetchers, add=add)
     fetcher(join=True)
-    pickle.dump(proxies, open('proxies', 'wb'))
+    if save:
+        with open(save, 'w') as fh:
+            json.dump([p.to_json() for p in proxies.values()], fh,
+                      indent=2, separators=(',', ': '))

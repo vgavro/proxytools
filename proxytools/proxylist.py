@@ -2,9 +2,13 @@ import logging
 import random
 from datetime import datetime, timedelta
 import enum
+import json
+import os.path
+import atexit
 
 from gevent.lock import Semaphore
 
+from .models import Proxy
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +26,8 @@ class ProxyMaxRetriesExceeded(RuntimeError):
 
 
 class ProxyList:
-    def __init__(self, fetcher=None, min_size=50, max_failed=3, max_simultaneous=2):
+    def __init__(self, fetcher=None, min_size=50, max_failed=3, max_simultaneous=2,
+                 filename=None, atexit_save=False):
         if min_size <= 0:
             raise ValueError('min_size must be positive')
         if fetcher:
@@ -35,6 +40,14 @@ class ProxyList:
         self.ready = Semaphore()
         self.active_proxies = {}
         self.blacklist_proxies = {}
+
+        if filename and os.path.exists(filename):
+            self.load(filename)
+        if atexit_save:
+            if atexit_save is True:
+                assert filename
+                atexit_save = filename
+            atexit.register(self.save, atexit_save)
 
         self.maybe_update()
 
@@ -112,3 +125,22 @@ class ProxyList:
         for proxy in tuple(self.blacklist_proxies.values()):
             if proxy.failed_at < before:
                 del self.blacklist_proxies[proxy.url]
+
+    def load(self, filename):
+        with open(filename, 'w') as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            for key in ('active_proxies', 'blacklist_proxies'):
+                proxies = getattr(self, key)
+                for proxy in data[key]:
+                    proxies[proxy.url] = Proxy.from_json(proxy)
+        else:
+            for proxy in data:
+                self.add(Proxy.from_json(proxy))
+
+    def save(self, filename):
+        data = {}
+        for key in ('active_proxies', 'blacklist_proxies'):
+            data[key] = tuple(p.to_json() for p in getattr(self, key))
+        with open(filename, 'w') as fh:
+            json.dump(fh)

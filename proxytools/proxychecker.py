@@ -23,12 +23,12 @@ class ProxyChecker:
         print('checking', proxy.url)
         proxies = {'http': proxy.url, 'https': proxy.url}
         try:
-            print('http', proxy, self.session.get('http://httpbin.org/get', timeout=self.timeout,
+            print('http', proxy, self.session.get('http://httpbin.org/get?show_env=1', timeout=self.timeout,
                                                   proxies=proxies).text)
         except Exception as exc:
             print('http', proxy, exc)
         try:
-            print('https', proxy, self.session.get('https://httpbin.org/get', timeout=self.timeout,
+            print('https', proxy, self.session.get('https://httpbin.org/get?show_env=1', timeout=self.timeout,
                                                    proxies=proxies).text)
         except Exception as exc:
             print('https', proxy, exc)

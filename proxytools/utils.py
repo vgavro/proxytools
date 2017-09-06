@@ -3,8 +3,38 @@ import json
 import http.client
 from datetime import datetime, date, time
 
-import pycountry
 import coloredlogs
+
+
+def create_country_name_to_alpha2():
+    from pycountry import countries
+    from pycountry_convert.country_name_to_country_alpha2 \
+        import COUNTRY_NAME_TO_COUNTRY_ALPHA2
+
+    rv = {k.upper(): v for k, v in COUNTRY_NAME_TO_COUNTRY_ALPHA2.items()}
+    rv.update({
+        'KOREA': 'KR',
+        'PALESTINIAN TERRITORY': 'PS',
+        'COTE D\'IVOIRE': 'CI',
+    })
+    for country in countries:
+        for attr in ('name', 'common_name', 'official_name'):
+            name = getattr(country, attr, None)
+            if name:
+                rv[name.upper()] = country.alpha_2
+    return rv
+
+
+COUNTRY_NAME_TO_ALPHA2 = create_country_name_to_alpha2()
+
+
+def country_name_to_alpha2(name, raise_error=True):
+    name = name.upper()
+    try:
+        return COUNTRY_NAME_TO_ALPHA2[name]
+    except KeyError:
+        if raise_error:
+            raise
 
 
 class EntityLoggerAdapter(logging.LoggerAdapter):
@@ -51,34 +81,6 @@ class classproperty(property):
         return desc.fget(cls)
 
 
-_country_name_fixes = {
-    'Macedonia': 'Macedonia, Republic of',
-    'Iran': 'Iran, Islamic Republic of',
-    'Korea': 'Korea, Republic of',
-    'Cote D\'ivoire': 'Côte d\'Ivoire',
-    'Timor-leste': 'Timor-Leste',
-    'Palestinian Territory': 'Palestine, State of',  # or Israel? :-)
-}
-
-
-def get_country_alpha_2_by_name(name, raise_on_not_found=True):
-    if name.isupper():
-        name = ' '.join(w.lower() if w in ['AND'] else w.capitalize()
-                        for w in name.split())
-    name = _country_name_fixes.get(name, name)
-    try:
-        return pycountry.countries.get(name=name).alpha_2
-    except KeyError:
-        try:
-            return pycountry.countries.get(common_name=name).alpha_2
-        except KeyError:
-            try:
-                return pycountry.countries.get(official_name=name).alpha_2
-            except KeyError:
-                if raise_on_not_found:
-                    raise
-
-
 def gevent_monkey_patch():
     from gevent import monkey
     monkey.patch_all()
@@ -87,6 +89,15 @@ def gevent_monkey_patch():
     # for error AttributeError: 'super' object has no attribute 'getpeername'
     from socks import socksocket
     socksocket.get_proxy_peername = lambda self: self.getpeername()
+
+
+def to_isoformat(dt):
+    assert not dt.tzinfo  # assuming we operate naive datetimes in utc
+    return dt.isoformat(timespec='seconds') + 'Z'
+
+
+def from_isoformat(dt):
+    return datetime.strptime('%Y-%m-%dT%H:%M:%SZ')
 
 
 class JSONEncoder(json.JSONEncoder):

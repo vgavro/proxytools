@@ -1,5 +1,5 @@
 from ..proxyfetcher import ProxyFetcher, Proxy
-from ..utils import get_country_alpha_2_by_name  # noqa
+from ..utils import country_name_to_alpha2
 
 
 class HidesterProxyFetcher(ProxyFetcher):
@@ -17,9 +17,7 @@ class HidesterProxyFetcher(ProxyFetcher):
         resp.raise_for_status()
         for proxy in resp.json():
             types = [Proxy.TYPE[proxy['type'].upper()]]
-            if proxy['type'] == 'http':
-                # it's better to check it?
-                types.append(Proxy.TYPE.HTTPS)
+            # NOTE: hidester just doesn't show if it's HTTPS or not
             yield Proxy('{type}://{IP}:{PORT}'.format(**proxy), types=types,
-                        country=get_country_alpha_2_by_name(proxy['country']),
+                        country=country_name_to_alpha2(proxy['country']),
                         anonymity=self.ANONYMITY_MAP[proxy['anonymity']])
