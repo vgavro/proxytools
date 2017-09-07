@@ -2,6 +2,7 @@ import logging
 import json
 import http.client
 from datetime import datetime, date, time
+from importlib import import_module
 
 import coloredlogs
 
@@ -25,13 +26,15 @@ def create_country_name_to_alpha2():
     return rv
 
 
-COUNTRY_NAME_TO_ALPHA2 = create_country_name_to_alpha2()
+_COUNTRY_NAME_TO_ALPHA2 = {}
 
 
 def country_name_to_alpha2(name, raise_error=True):
-    name = name.upper()
+    if not _COUNTRY_NAME_TO_ALPHA2:
+        # lazy population
+        _COUNTRY_NAME_TO_ALPHA2.update(create_country_name_to_alpha2())
     try:
-        return COUNTRY_NAME_TO_ALPHA2[name]
+        return _COUNTRY_NAME_TO_ALPHA2[name.upper()]
     except KeyError:
         if raise_error:
             raise
@@ -107,3 +110,10 @@ class JSONEncoder(json.JSONEncoder):
         if hasattr(self, 'to_json'):
             return obj.to_json()
         raise TypeError('Type %s not serializable' % type(obj))
+
+
+def import_string(import_name):
+    import_name = import_name.replace(':', '.')
+    *module_parts, attr = import_name.replace(':').split('.')
+    module = import_module('.'.join(module_parts))
+    return getattr(module, attr)

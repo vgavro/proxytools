@@ -56,11 +56,15 @@ class HidemyNameProxyFetcher(ProxyFetcher):
             for regexp in self.TIME_REGEXPS:
                 match = regexp.match(tr[6].text)
                 if match:
-                    succeed_at = datetime.utcnow() - timedelta(hours=int(match.group(1) or 0),
-                                                               minutes=int(match.group(2)))
+                    checked_at = (datetime.utcnow() -
+                                  timedelta(hours=int(match.group(1) or 0),
+                                            minutes=int(match.group(2))))
                     break
             else:
-                raise AssertionError('time not matched:{}'.format(tr[6].text))
+                raise AssertionError(f'Time not matched: {tr[6].text}')
 
-            yield Proxy(tr[0].text + ':' + tr[1].text, types=types, succeed_at=succeed_at,
-                        country=country, anonymity=self.ANONYMITY_MAP[tr[5].text])
+            yield Proxy(
+                tr[0].text + ':' + tr[1].text, types=types,
+                anonymity=self.ANONYMITY_MAP[tr[5].text],
+                country=country, checked_at=checked_at
+            )

@@ -23,7 +23,8 @@ class Proxy:
 
     def __init__(self, url, types, anonymity=None, country=None, speed=None,
                  fetched_at=None, fetched_sources=None,
-                 succeed_at=None, failed_at=None, failed=0, in_use=0):
+                 succeed_at=None, checked_at=None, failed_at=None, failed=0, in_use=0):
+        # Note that checked and succeed are same variable
 
         if not urlparse(url).scheme:
             if self.TYPE.HTTP in types or self.TYPE.HTTPS in types:
@@ -44,7 +45,7 @@ class Proxy:
          self.succeed_at, self.failed_at, self.failed, self.in_use) = \
             (url, set(types), anonymity, country, speed,
              fetched_at, fetched_sources and set(fetched_sources) or set(),
-             succeed_at, failed_at, failed, in_use)
+             succeed_at or checked_at, failed_at, failed, in_use)
 
     def __hash__(self):
         return self.url
@@ -54,6 +55,14 @@ class Proxy:
         return '<Proxy({})>'.format(attrs)
 
     __str__ = __repr__
+
+    @property
+    def checked_at(self):
+        return self.succeed_at
+
+    @checked_at.setter
+    def checked_at(self, checked_at):
+        self.succeed_at = checked_at
 
     @property
     def local_succeed(self):
