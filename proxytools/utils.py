@@ -1,10 +1,9 @@
 import logging
 import json
-import http.client
+import enum
+import collections
 from datetime import datetime, date, time
 from importlib import import_module
-
-import coloredlogs
 
 
 def create_country_name_to_alpha2():
@@ -49,23 +48,14 @@ class EntityLoggerAdapter(logging.LoggerAdapter):
         return '{}: {}'.format(self.entity, msg), kwargs
 
 
-def configure_logging(settings):
-    if settings.http_debug:
-        http.client.HTTPConnection.debuglevel = 1
-    else:
-        http.client.HTTPConnection.debuglevel = 0
-
-    field_styles = coloredlogs.DEFAULT_FIELD_STYLES.copy()
-    field_styles.update(settings.field_styles)
-    level_styles = coloredlogs.DEFAULT_LEVEL_STYLES.copy()
-    level_styles.update(settings.level_styles)
-    coloredlogs.install(
-        field_styles=field_styles, level_styles=level_styles,
-        **{k: v for k, v in settings.items() if k in ['level', 'fmt', 'datefmt']}
-    )
-    for name, level in settings.levels.items():
-        logger = logging.getLogger(name)
-        logger.setLevel(level)
+def dict_merge(d, u, copy=False):
+    # https://stackoverflow.com/a/3233356/450103
+    for k, v in u.items():
+        if isinstance(v, collections.Mapping):
+            d[k] = dict_merge(d.get(k, {}), v)
+        else:
+            d[k] = u[k]
+    return d
 
 
 class classproperty(property):
@@ -96,24 +86,45 @@ def gevent_monkey_patch():
 
 def to_isoformat(dt):
     assert not dt.tzinfo  # assuming we operate naive datetimes in utc
-    return dt.isoformat(timespec='seconds') + 'Z'
+    return dt.isoformat(sep=' ', timespec='seconds') + 'Z'
 
 
 def from_isoformat(dt):
-    return datetime.strptime('%Y-%m-%dT%H:%M:%SZ')
+    return datetime.strptime('%Y-%m-%d %H:%M:%SZ')
 
 
 class JSONEncoder(json.JSONEncoder):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('indent', 2)
+        kwargs.setdefault('separators', (',', ': '))
+        super().__init__(*args, **kwargs)
+
     def default(self, obj):
-        if isinstance(obj, (datetime, date, time)):
+        if isinstance(obj, datetime):
+            return (obj.isoformat(sep=' ', timespec='seconds') +
+                    (obj.tzinfo and '' or 'Z'))
+        if isinstance(obj, (date, time)):
             return obj.isoformat()
-        if hasattr(self, 'to_json'):
+        if isinstance(obj, enum.Enum):
+            return obj.name
+        if isinstance(obj, set):
+            return tuple(obj)
+        if hasattr(obj, 'to_json'):
             return obj.to_json()
-        raise TypeError('Type %s not serializable' % type(obj))
+        super().default(obj)
+
+    def dump(self, obj, fp):
+        iterator = self.iterencode(obj)
+        if isinstance(fp, str):
+            with open(fp, 'w') as fp:
+                for chunk in iterator:
+                    fp.write(chunk)
+        else:
+            for chunk in iterator:
+                fp.write(chunk)
 
 
 def import_string(import_name):
-    import_name = import_name.replace(':', '.')
     *module_parts, attr = import_name.replace(':').split('.')
     module = import_module('.'.join(module_parts))
     return getattr(module, attr)

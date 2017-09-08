@@ -1,16 +1,15 @@
+import sys
 from abc import ABCMeta, abstractmethod, abstractproperty
 from datetime import datetime
 from collections import OrderedDict
-import sys
-import os
-import json
 
 import gevent
 import gevent.pool
 import click
 
+# from .cli import cli
 from .models import Proxy
-from .utils import classproperty, gevent_monkey_patch, import_string
+from .utils import classproperty, import_string
 
 
 class AbstractProxyFetcher(metaclass=ABCMeta):
@@ -153,30 +152,35 @@ class ProxyFetcher(AbstractProxyFetcher):
 
 @click.command()
 @click.option('-c', '--config', default=None, help='YAML config file.',
-              envvar=['PROXYFETCHER_CONFIG', 'PROXYTOOLS_CONFIG'])
-@click.option('-o', '--override', default=None,
+              envvar=['PROXYTOOLS_CONFIG'])
+@click.option('-o', '--options', default='{}',
               help='YAML config override string (will be merged with file if supplied).')
-@click.option('-s', '--save', default=None, help='Save proxies to file (JSON).')
-@click.option('-p', '--print', is_flag=True, help='Print proxies to stdout.')
-def main(config, override, save, print):
-    if not any((save, print)):
-        raise click.BadArgumentUsage('You must supply --save or --print arguments.')
+@click.option('-s', '--save', required=True, help='Save(JSON) proxies to file; "-" for stdout.')
+@click.pass_context
+def main(ctx, config, options, save):
+    # TODO: move it to .cli module
+    from .cli import load_config, configure_logging, gevent_monkey_patch, JSONEncoder
+    config = load_config(config, options, override_key=ctx.invoked_subcommand)
+    configure_logging(config.get('logging', {}))
     gevent_monkey_patch()
+    ctx.obj = {}
+    ctx.obj['config'] = config
+    ctx.obj['json_encoder'] = JSONEncoder(**config.get('json', {}))
 
     proxies = OrderedDict()
 
     def add(proxy):
-        if print:
-            sys.stdout.write(str(proxy) + os.linesep)
-            sys.stdout.flush()
         if proxy.url in proxies:
             proxies[proxy.url].merge_meta(proxy)
         else:
             proxies[proxy.url] = proxy
 
-    fetcher = MultiProxyFetcher(MultiProxyFetcher.registry, add=add)
+    conf = ctx.obj['config'].get('proxyfetcher', {})
+    if conf.get('fetchers') in ('*', None):
+        conf['fetchers'] = MultiProxyFetcher.registry
+    fetcher = MultiProxyFetcher(add=add, **conf)
+
     fetcher(join=True)
-    if save:
-        with open(save, 'w') as fh:
-            json.dump([p.to_json() for p in proxies.values()], fh,
-                      indent=2, separators=(',', ': '))
+
+    ctx.obj['json_encoder'].dump(tuple(proxies.values()),
+                                 (save == '-') and sys.stdout or save)

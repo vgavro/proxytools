@@ -112,13 +112,17 @@ class Proxy:
                 data[key] = set(Proxy.TYPES[type_] for type_ in value)
         return cls(**data)
 
-    def to_csv(self):
-        # Maybe implement it someday? :-)
-        # It wouldn't be very useful without cross-project loading
-        def to_text(value):
-            if value is None:
-                return ''
-            if isinstance(value, (tuple, list, set)):
-                return ' '.join(value)
-            return str(value)
-        return [to_text(value) for value in self.to_json().values()]
+#    def to_csv(self):
+#        # Maybe implement it someday? :-)
+#        # It wouldn't be very useful without cross-project loading
+#        def to_text(value):
+#            if value is None:
+#                return ''
+#            if isinstance(value, (tuple, list, set)):
+#                return ' '.join([to_text(v) for v in value])
+#            if isinstance(value, enum.Enum):
+#                return value.name
+#            if isinstance(value, datetime):
+#                to_isoformat(value)
+#            return str(value)
+#        return [to_text(value) for value in self.to_json().values()]
