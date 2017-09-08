@@ -1,3 +1,8 @@
+import re
+from typing.re import Pattern
+from collections import OrderedDict
+
+from requests.cookies import RequestsCookieJar
 from requests.adapters import HTTPAdapter
 from requests.sessions import Session
 
@@ -5,6 +10,13 @@ from .proxylist import ProxyMaxRetriesExceeded
 
 
 PROXY_MAX_RETRIES_DEFAULT = 3
+TIMEOUT_DEFAULT = 10
+
+
+class ForgetfulCookieJar(RequestsCookieJar):
+    # from https://github.com/requests/toolbelt/blob/master/requests_toolbelt/cookies/forgetful.py
+    def set_cookie(self, *args, **kwargs):
+        return
 
 
 class ResponseValidator:
@@ -26,14 +38,15 @@ class ResponseValidator:
 
 
 def _call_with_proxylist(proxylist, func, *args, **kwargs):
+    if kwargs.get('proxies'):
+        raise ValueError('proxies argument is not empty, '
+                         'but should be populated from proxylist')
     proxy_max_retries = kwargs.pop('proxy_max_retries', PROXY_MAX_RETRIES_DEFAULT)
     proxy_response_validator = kwargs.pop('proxy_response_validator', None)
+
     exclude = []
     for _ in range(proxy_max_retries):
         proxy = proxylist.get_random(exclude=exclude)
-        if kwargs.get('proxies'):
-            raise ValueError('proxies argument is not empty, '
-                             'but should be populated from proxylist')
         kwargs['proxies'] = {'http': proxy.url, 'https': proxy.url}
         try:
             resp = func(*args, **kwargs)
@@ -41,14 +54,14 @@ def _call_with_proxylist(proxylist, func, *args, **kwargs):
             # TODO: do not keep connections to proxy on initialization
             # TODO: keep proxy_managers in proxy_list maybe? for connection caching?
         except Exception as exc:
-            proxylist.failed(proxy, exc=exc)
+            proxylist.fail(proxy, exc=exc)
             exclude.append(proxy.url)
         else:
             if not proxy_response_validator or proxy_response_validator(resp):
-                proxylist.succeed(proxy)
+                proxylist.success(proxy)
                 return resp
             else:
-                proxylist.failed(proxy, resp=resp)
+                proxylist.fail(proxy, resp=resp)
                 exclude.append(proxy.url)
     raise ProxyMaxRetriesExceeded('Max retries exceeded: ' + str(proxy_max_retries))
 
@@ -73,17 +86,69 @@ class ProxyListHTTPAdapter(SharedProxyManagerHTTPAdapter):
         return _call_with_proxylist(self.proxylist, super().send, *args, **kwargs)
 
 
-class ProxyListSession(Session):
-    # TODO: we must implement session to allow custom max_retries and ResponseValidator
-    # per request, not per adapter, for example for SuperProxy requests
+class ConfigurableSession(Session):
+    def __init__(self, **kwargs):
+        super().__init__()
+
+        # to specify ordering this may be OrderedDict
+        mount = kwargs.pop('mount', {})
+        for prefix, adapter in mount.items():
+            self.mount(prefix, adapter)
+
+        _configurable_attrs = [
+            'headers', 'auth', 'proxies', 'hooks',
+            'params', 'stream', 'verify', 'cert', 'max_redirects',
+            'trust_env', 'cookies',
+            'timeout', 'allow_redirects'
+        ]
+        for k, v in kwargs.items():
+            if k in _configurable_attrs:
+                setattr(self, k, v)
+            else:
+                raise TypeError(f'Unknown keyword argument: {k}')
+
+    def request(self, *args, **kwargs):
+        kwargs.setdefault('timeout', getattr(self, 'timeout', None))
+        kwargs.setdefault('allow_redirects', getattr(self, 'allow_redirects', True))
+        return super().request(*args, **kwargs)
+
+
+class RegexpMountSession(Session):
+    def __init__(self, regexp_adapters={}, **kwargs):
+        self.regexp_adapters = OrderedDict()
+        for pattern, adapter in regexp_adapters.items():
+            self.regexp_mount(pattern, adapter)
+
+        super().__init__(**kwargs)
+
+    def regexp_mount(self, pattern, adapter):
+        if not isinstance(pattern, Pattern):
+            pattern = re.compile(pattern)
+        self.regexp_adapters[pattern] = adapter
+
+    def get_adapter(self, url):
+        for pattern, adapter in self.regexp_adapters.items():
+            if re.match(url):
+                return adapter
+        return super().get_adapter(url)
+
+
+class ProxyListSession(RegexpMountSession, ConfigurableSession):
+    # Never work with proxies without timeout!
+    # NOTE: this timeout applies to each request,
+    # so total timeout would be proxy_max_retries * timeout
+    timeout = TIMEOUT_DEFAULT
+
     def __init__(self, proxylist, proxy_max_retries=PROXY_MAX_RETRIES_DEFAULT,
                  proxy_response_validator=None, **kwargs):
         self.proxylist = proxylist
         self.proxy_max_retries = proxy_max_retries
         self.proxy_response_validator = proxy_response_validator
+
+        adapter = SharedProxyManagerHTTPAdapter(proxylist.proxy_pool_manager)
+        kwargs['mount'] = {'http://': adapter, 'https://': adapter}
+
         super().__init__(**kwargs)
-        self.mount('http://', SharedProxyManagerHTTPAdapter(proxylist.proxy_pool_manager))
-        self.mount('https://', SharedProxyManagerHTTPAdapter(proxylist.proxy_pool_manager))
 
     def request(self, *args, **kwargs):
         kwargs.setdefault('proxy_max_retries', self.proxy_max_retries)

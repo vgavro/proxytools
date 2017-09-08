@@ -59,10 +59,12 @@ class ProxyList:
         return len(self.active_proxies) < self.min_size
 
     def maybe_update(self, wait=False):
-        if not len(self.active_proxies) and self.fetcher:
-            self.ready.acquire(blocking=False)
-        else:
-            raise InsufficientProxiesError()
+        if not len(self.active_proxies):
+            if self.fetcher:
+                self.ready.acquire(blocking=False)
+                assert self.need_update
+            else:
+                raise InsufficientProxiesError()
         if self.need_update and self.fetcher and self.fetcher.ready:
             self.fetcher()
         if wait and self.fetcher and self.ready.locked():
@@ -81,7 +83,7 @@ class ProxyList:
                 self.ready.release()
             return True
 
-    def fail(self, proxy):
+    def fail(self, proxy, exc=None, resp=None):
         proxy.failed_at = datetime.utcnow()
         proxy.failed += 1
         proxy.in_use -= 1
@@ -99,7 +101,7 @@ class ProxyList:
             del self.proxy_pool_manager[proxy.url]
         self.maybe_update()
 
-    def succees(self, proxy):
+    def success(self, proxy):
         proxy.succeed_at = datetime.utcnow()
         proxy.failed_at = None
         proxy.failed = 0
@@ -113,7 +115,8 @@ class ProxyList:
         self.maybe_update(wait=True)
         try:
             proxy = random.choice([p for p in self.active_proxies.values()
-                                   if p.in_use < p.max_simultaneous and p.url not in exclude])
+                                   if p.in_use < self.max_simultaneous and
+                                   p.url not in exclude])
         except IndexError:
             raise InsufficientProxiesError()
         proxy.in_use += 1
@@ -127,13 +130,15 @@ class ProxyList:
                 del self.blacklist_proxies[proxy.url]
 
     def load(self, filename):
-        with open(filename, 'w') as fh:
+        with open(filename, 'r') as fh:
+            print(fh)
             data = json.load(fh)
         if isinstance(data, dict):
             for key in ('active_proxies', 'blacklist_proxies'):
                 proxies = getattr(self, key)
                 for proxy in data[key]:
-                    proxies[proxy.url] = Proxy.from_json(proxy)
+                    proxy = Proxy.from_json(proxy)
+                    proxies[proxy.url] = proxy
         else:
             for proxy in data:
                 self.add(Proxy.from_json(proxy))
@@ -141,6 +146,6 @@ class ProxyList:
     def save(self, filename):
         data = {}
         for key in ('active_proxies', 'blacklist_proxies'):
-            data[key] = tuple(p.to_json() for p in getattr(self, key))
+            data[key] = tuple(p.to_json() for p in getattr(self, key).values())
         with open(filename, 'w') as fh:
-            json.dump(fh)
+            json.dump(data, fh)

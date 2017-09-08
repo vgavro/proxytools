@@ -9,9 +9,11 @@ import click
 
 # from .cli import cli
 from .models import Proxy
+from .proxychecker import ProxyChecker
 from .utils import classproperty, import_string
 
 
+# TODO: move it to models.AbstractWorkersManager, also use it in ProxyChecker
 class AbstractProxyFetcher(metaclass=ABCMeta):
     @abstractmethod
     def __call__(self, join=False):
@@ -24,14 +26,21 @@ class AbstractProxyFetcher(metaclass=ABCMeta):
         pass
 
     def add(self, proxy):
-        """You must implement this method (or pass it to __init__)"""
-        print(proxy)
+        raise NotImplementedError('You must implement this method '
+                                  'or pass callback to __init__')
 
 
 class MultiProxyFetcher(AbstractProxyFetcher):
-    def __init__(self, fetchers, add=None, pool=None, pool_size=20, **kwargs):
+    def __init__(self, fetchers, add=None, checker=None, pool=None, pool_size=20, **kwargs):
+        # TODO: implement stop on limit!
+
         self.pool = pool or gevent.pool.Pool(pool_size)
-        self.add = add or self.add
+
+        self.add = add
+        self.checker = checker
+        if self.checker:
+            # TODO: NOTE!!! this is not set on lazy add setting
+            self.checker.add = self.add
 
         self.fetchers = []
         fetcher_kwargs = {name: kwargs.pop(name, {}) for name in self.registry}
@@ -42,13 +51,14 @@ class MultiProxyFetcher(AbstractProxyFetcher):
                 else:
                     fetcher = self.register(fetcher)
             if isinstance(fetcher, type):
-                fetcher = fetcher(**fetcher_kwargs[fetcher.name], add=self.add,
+                fetcher = fetcher(**fetcher_kwargs[fetcher.name],
+                                  add=self.maybe_check_and_add,
                                   pool=self.pool, **kwargs)
             else:
                 if fetcher_kwargs[fetcher.name]:
                     raise ValueError(f'{fetcher.name} already initialized')
                 fetcher.pool = self.pool
-                fetcher.add = self.add
+                fetcher.add = self.maybe_check_and_add
             self.fetchers.append(fetcher)
 
     def __call__(self, join=False):
@@ -57,10 +67,20 @@ class MultiProxyFetcher(AbstractProxyFetcher):
         if join:
             for fetcher in self.fetchers:
                 fetcher.workers.join()
+            if self.checker:
+                self.checker.workers.join()
+
+    def maybe_check_and_add(self, proxy):
+        if self.checker:
+            # TODO: way to store blacklist for checker
+            self.checker(proxy)
+        else:
+            self.add(proxy)
 
     @property
     def ready(self):
-        return all(f.ready for f in self.fetchers)
+        return (all(f.ready for f in self.fetchers) and
+                (not self.checker or self.checker.ready))
 
     _registry = None
 
@@ -113,6 +133,7 @@ class ProxyFetcher(AbstractProxyFetcher):
 
     def create_session(self):
         # TODO: create session using current proxylist
+        # Lazy import requests because of gevent.monkey_patch
         import requests
         session = requests.Session()
         session.headers['User-Agent'] = ('Mozilla/5.0 (X11; Linux x86_64) '
@@ -155,17 +176,21 @@ class ProxyFetcher(AbstractProxyFetcher):
               envvar=['PROXYTOOLS_CONFIG'])
 @click.option('-o', '--options', default='{}',
               help='YAML config override string (will be merged with file if supplied).')
+@click.option('--check/--no-check', default=False,
+              help='Run local checker on fetched proxies or not.')
 @click.option('-s', '--save', required=True, help='Save(JSON) proxies to file; "-" for stdout.')
 @click.pass_context
-def main(ctx, config, options, save):
+def main(ctx, config, options, check, save):
     # TODO: move it to .cli module
     from .cli import load_config, configure_logging, gevent_monkey_patch, JSONEncoder
-    config = load_config(config, options, override_key=ctx.invoked_subcommand)
+    config = load_config(config, options, 'proxyfetcher')
     configure_logging(config.get('logging', {}))
     gevent_monkey_patch()
     ctx.obj = {}
     ctx.obj['config'] = config
     ctx.obj['json_encoder'] = JSONEncoder(**config.get('json', {}))
+
+    checker = check and ProxyChecker() or None
 
     proxies = OrderedDict()
 
@@ -176,9 +201,12 @@ def main(ctx, config, options, save):
             proxies[proxy.url] = proxy
 
     conf = ctx.obj['config'].get('proxyfetcher', {})
-    if conf.get('fetchers') in ('*', None):
-        conf['fetchers'] = MultiProxyFetcher.registry
-    fetcher = MultiProxyFetcher(add=add, **conf)
+
+    fetchers = conf.pop('fetchers', None)
+    if fetchers in ('*', None):
+        fetchers = MultiProxyFetcher.registry
+
+    fetcher = MultiProxyFetcher(fetchers, checker=checker, add=add, **conf)
 
     fetcher(join=True)
 

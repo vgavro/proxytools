@@ -90,7 +90,7 @@ def to_isoformat(dt):
 
 
 def from_isoformat(dt):
-    return datetime.strptime('%Y-%m-%d %H:%M:%SZ')
+    return datetime.strptime(dt, '%Y-%m-%d %H:%M:%SZ')
 
 
 class JSONEncoder(json.JSONEncoder):

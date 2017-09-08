@@ -8,8 +8,15 @@ import yaml
 from .utils import dict_merge, JSONEncoder, gevent_monkey_patch  # noqa
 
 
+DEFAULT_LOGGING_CONFIG = {
+    'coloredlogs': {
+        'level': 'info'
+    }
+}
+
+
 def configure_logging(config):
-    config = config.copy()  # actually we don't care, just to be polite
+    config = dict_merge(DEFAULT_LOGGING_CONFIG.copy(), config)
     if config.pop('http_debug', False):
         http.client.HTTPConnection.debuglevel = 1
     else:

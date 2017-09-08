@@ -109,7 +109,7 @@ class Proxy:
             elif value and key == 'anonymity':
                 data[key] = Proxy.ANONYMITY[value]
             elif key == 'types':
-                data[key] = set(Proxy.TYPES[type_] for type_ in value)
+                data[key] = set(Proxy.TYPE[type_] for type_ in value)
         return cls(**data)
 
 #    def to_csv(self):
