@@ -87,14 +87,3 @@ class ProxyChecker(AbstractProxyProcessor):
             if proxy.parsed.scheme.startswith('http'):
                 proxy.types.add(Proxy.TYPE.HTTPS)
             return True
-
-
-# TODO: add cli
-# def main():
-#     from .utils import gevent_monkey_patch
-#     gevent_monkey_patch()
-#     import pickle
-#
-#     proxies = pickle.load(open('proxies', 'rb'))
-#     checker = ProxyChecker()
-#     checker([p for p in proxies if p.TYPE.HTTP in p.types], join=True)

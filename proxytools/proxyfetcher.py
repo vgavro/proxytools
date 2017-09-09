@@ -1,13 +1,7 @@
-import sys
 from datetime import datetime
-from collections import OrderedDict
 import enum
 
-import click
-
-# from .cli import cli
 from .models import Proxy, AbstractProxyProcessor
-from .proxychecker import ProxyChecker
 from .utils import classproperty, import_string
 
 
@@ -139,47 +133,3 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
                 assert proxy.fetch_at > proxy.success_at, f'Proxy success_at in future: {proxy}'
                 proxy.fetch_sources.add(self.name)
                 self.process_proxy(proxy)
-
-
-@click.command()
-@click.option('-c', '--config', default=None, help='YAML config file.',
-              envvar=['PROXYTOOLS_CONFIG'])
-@click.option('-o', '--options', default='{}',
-              help='YAML config override string (will be merged with file if supplied).')
-@click.option('--check/--no-check', default=False,
-              help='Run local checker on fetched proxies or not.')
-@click.option('-s', '--save', required=True, help='Save(JSON) proxies to file; "-" for stdout.')
-@click.pass_context
-def main(ctx, config, options, check, save):
-    # TODO: move it to .cli module
-    from .cli import load_config, configure_logging, gevent_monkey_patch, JSONEncoder
-    config = load_config(config, options, 'proxyfetcher')
-    configure_logging(config.get('logging', {}))
-    gevent_monkey_patch()
-    ctx.obj = {}
-    ctx.obj['config'] = config
-    ctx.obj['json_encoder'] = JSONEncoder(**config.get('json', {}))
-
-    # TODO: move parameters to options
-    checker = check and ProxyChecker(http_check=False, https_force_check=True) or None
-
-    proxies = OrderedDict()
-
-    def proxy(proxy):
-        if proxy.url in proxies:
-            proxies[proxy.url].merge_meta(proxy)
-        else:
-            proxies[proxy.url] = proxy
-
-    conf = ctx.obj['config'].get('proxyfetcher', {})
-
-    fetchers = conf.pop('fetchers', None)
-    if fetchers in ('*', None):
-        fetchers = ProxyFetcher.registry
-
-    fetcher = ProxyFetcher(fetchers, checker=checker, proxy=proxy, **conf)
-
-    fetcher(join=True)
-
-    ctx.obj['json_encoder'].dump(tuple(proxies.values()),
-                                 (save == '-') and sys.stdout or save)
