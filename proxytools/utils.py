@@ -86,11 +86,13 @@ def gevent_monkey_patch():
 
 def to_isoformat(dt):
     assert not dt.tzinfo  # assuming we operate naive datetimes in utc
-    return dt.isoformat(sep=' ', timespec='seconds') + 'Z'
+    return dt.isoformat(timespec='seconds') + 'Z'
 
 
 def from_isoformat(dt):
-    return datetime.strptime(dt, '%Y-%m-%d %H:%M:%SZ')
+    # TODO: Try to use dateutil.parser.parse for times generated
+    # not from our code, as optional depency
+    return datetime.strptime(dt, '%Y-%m-%dT%H:%M:%SZ')
 
 
 class JSONEncoder(json.JSONEncoder):
@@ -101,16 +103,19 @@ class JSONEncoder(json.JSONEncoder):
 
     def default(self, obj):
         if isinstance(obj, datetime):
-            return (obj.isoformat(sep=' ', timespec='seconds') +
+            # assuming naive datetimes in UTC
+            return (obj.isoformat(timespec='seconds') +
                     (obj.tzinfo and '' or 'Z'))
         if isinstance(obj, (date, time)):
             return obj.isoformat()
         if isinstance(obj, enum.Enum):
             return obj.name
-        if isinstance(obj, set):
-            return tuple(obj)
         if hasattr(obj, 'to_json'):
             return obj.to_json()
+        # if isinstance(obj, set):
+        #     return tuple(obj)
+        if hasattr(obj, '__iter__'):
+            return tuple(obj)
         super().default(obj)
 
     def dump(self, obj, fp):
@@ -125,6 +130,27 @@ class JSONEncoder(json.JSONEncoder):
 
 
 def import_string(import_name):
-    *module_parts, attr = import_name.replace(':').split('.')
+    *module_parts, attr = import_name.replace(':', '.').split('.')
+    if not module_parts:
+        raise ImportError(f'You must specify module and object, separated by ":" or ".", '
+                          f'got "{import_name}" instead')
     module = import_module('.'.join(module_parts))
     return getattr(module, attr)
+
+
+def get_subclasses_from_module(module, cls):
+    if isinstance(module, str):
+        module = import_module(module)
+
+    rv = []
+    for attr in dir(module):
+        if attr.startswith('_'):
+            continue
+        obj = getattr(module, attr)
+        try:
+            if issubclass(obj, cls) and obj is not cls:
+                rv.append(obj)
+        except TypeError:
+            # issubclass() arg 1 must be a class skip
+            pass
+    return rv

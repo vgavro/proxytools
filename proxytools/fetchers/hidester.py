@@ -1,10 +1,10 @@
 from datetime import datetime
 
-from ..proxyfetcher import ProxyFetcher, Proxy
+from ..proxyfetcher import ConcreteProxyFetcher, Proxy
 from ..utils import country_name_to_alpha2
 
 
-class HidesterProxyFetcher(ProxyFetcher):
+class HidesterProxyFetcher(ConcreteProxyFetcher):
     URL = 'https://hidester.com/proxydata/php/data.php?mykey=csv&gproxy=2'
     REFERER = 'https://hidester.com/proxylist/'
 
@@ -24,5 +24,5 @@ class HidesterProxyFetcher(ProxyFetcher):
                 types=[Proxy.TYPE[proxy['type'].upper()]],
                 country=country_name_to_alpha2(proxy['country']),
                 anonymity=self.ANONYMITY_MAP[proxy['anonymity']],
-                succeed_at=datetime.utcfromtimestamp(int(proxy['latest_check']))
+                success_at=datetime.utcfromtimestamp(int(proxy['latest_check']))
             )

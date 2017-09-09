@@ -1,39 +1,40 @@
-# import sys
+import logging
 from datetime import datetime
 
-import gevent.pool
+from .models import Proxy, AbstractProxyProcessor
 
 
-HTTP_URL = 'http://httpbin.org/get?show_env=1'
-HTTPS_URL = 'https://httpbin.org/get?show_env=1'
+logger = logging.getLogger(__name__)
 
 
-class ProxyChecker:
-    def __init__(self, pool=None, add=None, pool_size=10, timeout=5, session=None,
-                 max_retries=0, retry_timeout=0, https_force_check=True):
+CHECK_URLS = {
+    'http': 'http://httpbin.org/get?show_env=1',
+    'https': 'https://httpbin.org/get?show_env=1',
+}
 
-        # TODO: make abstract class for this routine
-        self.pool = pool or gevent.pool.Pool(pool_size)
-        self.workers = gevent.pool.Group()
-        self.add = add
 
+class ProxyChecker(AbstractProxyProcessor):
+    def __init__(self, proxy=None, pool=None, pool_size=None,
+                 session=None, timeout=5, max_retries=0, retry_timeout=0,
+                 http_check=True, https_check=True, https_force_check=False):
+        super().__init__(proxy, pool, pool_size)
+
+        self.timeout = timeout
         # TODO: not implemented
         self.max_retries = max_retries
         self.retry_timeout = retry_timeout
 
+        self.http_check = http_check
+        self.https_check = https_check
+        # Checks even if only http is supported
+        # Needed for some fetchers that not reporting that proxy supports https
         self.https_force_check = https_force_check
-
-        self.timeout = timeout
 
     def __call__(self, *proxies, join=False):
         for proxy in proxies:
-            self.workers.add(self.pool.spawn(self.worker, proxy))
+            self.spawn(self.worker, proxy)
         if join:
             self.workers.join()
-
-    @property
-    def ready(self):
-        return not len(self.workers)
 
     def create_session(self):
         # Lazy import requests because of gevent.monkey_patch
@@ -41,30 +42,52 @@ class ProxyChecker:
         return ConfigurableSession(cookies=ForgetfulCookieJar(), timeout=self.timeout)
 
     def worker(self, proxy):
-        if not self.https_force_check:
-            # TODO: think about arguments for all check cases!
-            raise NotImplementedError('Only https_force_check is implemented yet')
-
         # Creating session each time not to hit [Errno 24] Too many open files
         session = self.create_session()
+        https_support = proxy.types.intersection([Proxy.TYPE.HTTPS, Proxy.TYPE.SOCKS4,
+                                                  Proxy.TYPE.SOCKS5])
 
+        success = None
+        if ((self.https_check and https_support) or self.https_force_check):
+            success = self.check(session, 'https', proxy)
+            if proxy.parsed.scheme.startswith('http'):
+                if success:
+                    proxy.types.add(Proxy.TYPE.HTTPS)
+                elif Proxy.TYPE.HTTPS in proxy.types:
+                    proxy.types.remove(Proxy.TYPE.HTTPS)
+
+        # Assuming that if we have https working, http working also
+        # TODO: we can't test anonymity then
+        if (self.http_check and success is None):
+            success = self.check(session, 'http', proxy)
+
+        # TODO: maybe add logging that proxy is skipped?
+        # don't make this an error? Сынк эбаут ит!
+        assert success is not None, 'proxy not checked'
+        self.process_proxy(proxy)
+
+    def check(self, session, protocol, proxy):
         proxies = {'http': proxy.url, 'https': proxy.url}
         try:
-            resp = session.get(HTTPS_URL, timeout=self.timeout, proxies=proxies)
+            resp = session.get(CHECK_URLS[protocol], proxies=proxies)
             resp.raise_for_status()
             assert 'origin' in resp.json()
+            # TODO: anonymity check for http
+            # TODO: speed check
         except Exception as exc:
-            # TODO: add logging
-            # print(f'Checked fail: {proxy.url}: {exc}', file=sys.stderr)
+            proxy.fail_at = datetime.utcnow()
+            proxy.fail += 1
+            logging.debug(f'Check {protocol} fail: {proxy.url}: {exc}')
             return False
         else:
-            # TODO: add logging
-            # print(f'Checker success: {proxy.url}: {resp.text}', file=sys.stderr)
-            proxy.checked_at = datetime.utcnow()
-            if proxy.TYPE.HTTP in proxy.types and proxy.TYPE.HTTPS not in proxy.types:
-                proxy.types.add(proxy.TYPE.HTTPS)
-            self.add(proxy)
-            return True  # TODO: maybe more smart callback for fail also?
+            logging.debug(f'Check {protocol} success: {proxy.url}')
+            proxy.success_at = datetime.utcnow()
+            proxy.fail_at = None
+            proxy.fail = 0
+            if proxy.parsed.scheme.startswith('http'):
+                proxy.types.add(Proxy.TYPE.HTTPS)
+            return True
+
 
 # TODO: add cli
 # def main():

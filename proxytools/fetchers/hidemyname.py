@@ -2,10 +2,10 @@ import re
 from datetime import datetime, timedelta
 from lxml import html
 
-from ..proxyfetcher import ProxyFetcher, Proxy
+from ..proxyfetcher import ConcreteProxyFetcher, Proxy
 
 
-class HidemyNameProxyFetcher(ProxyFetcher):
+class HidemyNameProxyFetcher(ConcreteProxyFetcher):
     URL = 'https://hidemy.name/en/proxy-list/'
 
     ANONYMITY_MAP = {
@@ -56,7 +56,7 @@ class HidemyNameProxyFetcher(ProxyFetcher):
             for regexp in self.TIME_REGEXPS:
                 match = regexp.match(tr[6].text)
                 if match:
-                    checked_at = (datetime.utcnow() -
+                    success_at = (datetime.utcnow() -
                                   timedelta(hours=int(match.group(1) or 0),
                                             minutes=int(match.group(2))))
                     break
@@ -66,5 +66,5 @@ class HidemyNameProxyFetcher(ProxyFetcher):
             yield Proxy(
                 tr[0].text + ':' + tr[1].text, types=types,
                 anonymity=self.ANONYMITY_MAP[tr[5].text],
-                country=country, checked_at=checked_at
+                country=country, success_at=success_at
             )

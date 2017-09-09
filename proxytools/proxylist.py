@@ -26,7 +26,7 @@ class ProxyMaxRetriesExceeded(RuntimeError):
 
 
 class ProxyList:
-    def __init__(self, fetcher=None, min_size=50, max_failed=3, max_simultaneous=2,
+    def __init__(self, fetcher=None, min_size=50, max_fail=3, max_simultaneous=2,
                  filename=None, atexit_save=False):
         if min_size <= 0:
             raise ValueError('min_size must be positive')
@@ -34,7 +34,7 @@ class ProxyList:
             fetcher.add = self.add
         self.fetcher = fetcher
         self.min_size = min_size
-        self.max_failed = max_failed
+        self.max_fail = max_fail
         self.max_simultaneous = max_simultaneous
 
         self.ready = Semaphore()
@@ -84,12 +84,12 @@ class ProxyList:
             return True
 
     def fail(self, proxy, exc=None, resp=None):
-        proxy.failed_at = datetime.utcnow()
-        proxy.failed += 1
+        proxy.fail_at = datetime.utcnow()
+        proxy.fail += 1
         proxy.in_use -= 1
         assert proxy.in_use >= 0
         if proxy.url in self.active_proxies:
-            if proxy.failed >= self.max_failed:
+            if proxy.fail >= self.max_fail:
                 self.blacklist(proxy)
 
     def blacklist(self, proxy):
@@ -102,9 +102,9 @@ class ProxyList:
         self.maybe_update()
 
     def success(self, proxy):
-        proxy.succeed_at = datetime.utcnow()
-        proxy.failed_at = None
-        proxy.failed = 0
+        proxy.success_at = datetime.utcnow()
+        proxy.fail_at = None
+        proxy.fail = 0
         proxy.in_use -= 1
         assert proxy.in_use >= 0
 
@@ -126,7 +126,7 @@ class ProxyList:
         if isinstance(before, timedelta):
             before = datetime.utcnow() - timedelta
         for proxy in tuple(self.blacklist_proxies.values()):
-            if proxy.failed_at < before:
+            if proxy.fail_at < before:
                 del self.blacklist_proxies[proxy.url]
 
     def load(self, filename):

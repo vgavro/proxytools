@@ -1,46 +1,30 @@
 import sys
-from abc import ABCMeta, abstractmethod, abstractproperty
 from datetime import datetime
 from collections import OrderedDict
+import enum
 
-import gevent
-import gevent.pool
 import click
 
 # from .cli import cli
-from .models import Proxy
+from .models import Proxy, AbstractProxyProcessor
 from .proxychecker import ProxyChecker
 from .utils import classproperty, import_string
 
 
-# TODO: move it to models.AbstractWorkersManager, also use it in ProxyChecker
-class AbstractProxyFetcher(metaclass=ABCMeta):
-    @abstractmethod
-    def __call__(self, join=False):
-        """Start proxy fetching"""
-        pass
-
-    @abstractproperty
-    def ready(self):
-        """If proxy fetching is finished (or not started yet)"""
-        pass
-
-    def add(self, proxy):
-        raise NotImplementedError('You must implement this method '
-                                  'or pass callback to __init__')
-
-
-class MultiProxyFetcher(AbstractProxyFetcher):
-    def __init__(self, fetchers, add=None, checker=None, pool=None, pool_size=20, **kwargs):
+class ProxyFetcher(AbstractProxyProcessor):
+    def __init__(self, fetchers, checker=None,
+                 proxy=None, pool=None, pool_size=None,
+                 **kwargs):
+        super().__init__(proxy, pool, pool_size)
         # TODO: implement stop on limit!
 
-        self.pool = pool or gevent.pool.Pool(pool_size)
-
-        self.add = add
         self.checker = checker
         if self.checker:
             # TODO: NOTE!!! this is not set on lazy add setting
-            self.checker.add = self.add
+            # implement __setattr__ (or other magic method) for setting
+            # proxyfetcher.proxy after initialization
+            # to set it also on checker
+            self.checker.proxy = self.proxy
 
         self.fetchers = []
         fetcher_kwargs = {name: kwargs.pop(name, {}) for name in self.registry}
@@ -52,13 +36,13 @@ class MultiProxyFetcher(AbstractProxyFetcher):
                     fetcher = self.register(fetcher)
             if isinstance(fetcher, type):
                 fetcher = fetcher(**fetcher_kwargs[fetcher.name],
-                                  add=self.maybe_check_and_add,
+                                  proxy=self.process_proxy,
                                   pool=self.pool, **kwargs)
             else:
                 if fetcher_kwargs[fetcher.name]:
                     raise ValueError(f'{fetcher.name} already initialized')
                 fetcher.pool = self.pool
-                fetcher.add = self.maybe_check_and_add
+                fetcher.proxy = self.process_proxy
             self.fetchers.append(fetcher)
 
     def __call__(self, join=False):
@@ -70,12 +54,11 @@ class MultiProxyFetcher(AbstractProxyFetcher):
             if self.checker:
                 self.checker.workers.join()
 
-    def maybe_check_and_add(self, proxy):
+    def process_proxy(self, proxy):
         if self.checker:
-            # TODO: way to store blacklist for checker
             self.checker(proxy)
         else:
-            self.add(proxy)
+            self.proxy(proxy)
 
     @property
     def ready(self):
@@ -97,35 +80,26 @@ class MultiProxyFetcher(AbstractProxyFetcher):
     def register(cls, fetcher_cls):
         if isinstance(fetcher_cls, str):
             fetcher_cls, fetcher_path = import_string(fetcher_cls), fetcher_cls
-        if not issubclass(fetcher_cls, ProxyFetcher):
-            raise TypeError('fetcher_cls must be ProxyFetcher subclass')
+        if not issubclass(fetcher_cls, ConcreteProxyFetcher):
+            raise TypeError('fetcher_cls must be ConcreteProxyFetcher subclass')
         cls.registry[fetcher_cls.name] = fetcher_cls
         cls.registry[fetcher_path] = fetcher_cls
         return fetcher_cls
 
 
-class ProxyFetcher(AbstractProxyFetcher):
-    def __init__(self, add=None, pool=None, pool_size=10, session=None,
-                 types=None, countries=None, anonymities=None, checked_delta=None):
-        self.pool = pool or gevent.pool.Pool(pool_size)
-        self.add = add or self.add
-        self.workers = gevent.pool.Group()
+class ConcreteProxyFetcher(AbstractProxyProcessor):
+    def __init__(self, proxy=None, pool=None, pool_size=10,
+                 session=None, types=None, countries=None, anonymities=None,
+                 success_delta=None):
+        super().__init__(proxy, pool, pool_size)
 
-        self.types = types
+        self.types = set(isinstance(t, enum.Enum) and t or Proxy.TYPE[t.upper()]
+                         for t in types)
         self.countries = countries
         self.anonymities = anonymities
-        self.checked_delta = checked_delta
+        self.success_delta = success_delta
 
         self.session = session or self.create_session()
-
-    def __call__(self, join=False):
-        self.spawn(self.worker)
-        if join:
-            self.workers.join()
-
-    @property
-    def ready(self):
-        return not len(self.workers)
 
     @classproperty
     def name(cls):
@@ -147,28 +121,24 @@ class ProxyFetcher(AbstractProxyFetcher):
             return False
         if self.anonymities and proxy.anonymity not in self.anonymities:
             return False
-        if self.types and proxy.type not in self.types:
+        if self.types and not proxy.types.intersection(self.types):
             return False
-        if (self.checked_delta and proxy.checked_at < (now - self.checked_delta)):
+        if (self.success_delta and proxy.success_at < (now - self.success_delta)):
             return False
         return True
 
     def process_worker(self, worker, *args, **kwargs):
+        result = worker(*args, **kwargs)
+        if not result:
+            return
         now = datetime.utcnow()
         for proxy in worker(*args, **kwargs):
             assert isinstance(proxy, Proxy)
             if self.filter(proxy, now=now):
-                proxy.fetched_at = now
-                proxy.fetched_sources.add(self.name)
-                proxy.types = set(proxy.types)
-                self.add(proxy)
-
-    def spawn(self, worker, *args, **kwargs):
-        self.workers.add(self.pool.spawn(self.process_worker, worker, *args, **kwargs))
-
-    def worker(self):
-        # NOTE: worker may spawn another workers, and so on
-        raise NotImplementedError()
+                proxy.fetch_at = now
+                assert proxy.fetch_at > proxy.success_at, f'Proxy success_at in future: {proxy}'
+                proxy.fetch_sources.add(self.name)
+                self.process_proxy(proxy)
 
 
 @click.command()
@@ -190,11 +160,12 @@ def main(ctx, config, options, check, save):
     ctx.obj['config'] = config
     ctx.obj['json_encoder'] = JSONEncoder(**config.get('json', {}))
 
-    checker = check and ProxyChecker() or None
+    # TODO: move parameters to options
+    checker = check and ProxyChecker(http_check=False, https_force_check=True) or None
 
     proxies = OrderedDict()
 
-    def add(proxy):
+    def proxy(proxy):
         if proxy.url in proxies:
             proxies[proxy.url].merge_meta(proxy)
         else:
@@ -204,9 +175,9 @@ def main(ctx, config, options, check, save):
 
     fetchers = conf.pop('fetchers', None)
     if fetchers in ('*', None):
-        fetchers = MultiProxyFetcher.registry
+        fetchers = ProxyFetcher.registry
 
-    fetcher = MultiProxyFetcher(fetchers, checker=checker, add=add, **conf)
+    fetcher = ProxyFetcher(fetchers, checker=checker, proxy=proxy, **conf)
 
     fetcher(join=True)
 

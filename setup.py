@@ -44,8 +44,8 @@ setup(
     install_requires=requires,
     entry_points={
         'console_scripts': [
-            'proxyfetcher=proxytools.proxyfetcher:main',
-            'proxychecker=proxytools.proxychecker:main'
+            'proxyfetcher=proxytools.cli:fetcher',
+            'proxychecker=proxytools.cli:checker',
         ],
     },
 )
