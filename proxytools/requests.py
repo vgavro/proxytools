@@ -18,21 +18,36 @@ class ForgetfulCookieJar(RequestsCookieJar):
         return
 
 
-class ResponseValidator:
-    def __init__(self, status=None, content=None, callback=None):
+class ResponseMatch:
+    """
+    Helper class to be used instead callback to match response.
+    For proxy_response_validator for example.
+    """
+    def __init__(self, status=None, content=None, header=None):
         if content and not isinstance(content, (tuple, list)):
             content = [content]
         if status and not isinstance(status, (tuple, list)):
             status = [status]
-        self.status, self.content, self.callback = status, content, callback
+        if header:
+            if not isinstance(header, (tuple, list)):
+                header = ((header, None),)
+            elif len(header) == 2 and not isinstance(header[0], (tuple, list)):
+                header = (header,)
+        self.status, self.content, self.header = status, content, header
 
     def __call__(self, resp):
         if self.content and not any(x in resp.content for x in self.content):
             return False
         if self.status and resp.status_code not in self.status:
             return False
-        if self.callback:
-            return self.callback(resp)
+        if self.header:
+            matched = False
+            for header, content in self.header:
+                has_header = header in resp.headers
+                matched = ((has_header and not content) or
+                           (has_header and content and content in resp.header[header]))
+            if not matched:
+                return False
         return True
 
 
