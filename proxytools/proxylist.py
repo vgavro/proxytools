@@ -104,7 +104,7 @@ class ProxyList:
             del self.active_proxies[proxy.addr]
         self.blacklist_proxies[proxy.addr] = proxy
         # TODO: there is urls in proxy_pool_manager!
-        if proxy.addr in self.proxy_pool_manager:
+        if proxy.url in self.proxy_pool_manager:
             self.proxy_pool_manager[proxy.addr].close()
             del self.proxy_pool_manager[proxy.addr]
         self.maybe_update()

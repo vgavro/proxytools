@@ -88,3 +88,5 @@ class ProxyChecker(AbstractProxyProcessor):
             proxy.fail_at = None
             proxy.fail = 0
             return True
+        finally:
+            session.close()
