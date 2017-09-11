@@ -1,5 +1,4 @@
 import re
-from typing.re import Pattern
 from collections import OrderedDict
 
 from requests.cookies import RequestsCookieJar
@@ -122,7 +121,10 @@ class RegexpMountSession(Session):
         super().__init__(**kwargs)
 
     def regexp_mount(self, pattern, adapter):
-        if not isinstance(pattern, Pattern):
+        if not isinstance(pattern, re._pattern_type):
+            # compat for python < 3.6
+            # see https://stackoverflow.com/a/34178375/450103
+            # and https://stackoverflow.com/a/30943547/450103
             pattern = re.compile(pattern)
         self.regexp_adapters[pattern] = adapter
 
