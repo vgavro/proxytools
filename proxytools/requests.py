@@ -64,7 +64,7 @@ def _call_with_proxylist(obj, proxylist, func, *args, **kwargs):
 
     exclude = []
     for _ in range(proxy_max_retries):
-        proxy = proxylist.get_random(exclude=exclude, preserve=obj._preserve_addr)
+        proxy = proxylist.get_fastest(exclude=exclude, preserve=obj._preserve_addr)
         kwargs['proxies'] = {'http': proxy.url, 'https': proxy.url}
         exc_ = None  # workaround for "smart" python3 variable clearing
         try:
@@ -107,7 +107,7 @@ class SharedProxyManagerHTTPAdapter(HTTPAdapter):
 
 class ProxyListHTTPAdapter(SharedProxyManagerHTTPAdapter):
     def __init__(self, proxylist, proxy_max_retries=PROXY_MAX_RETRIES_DEFAULT,
-                 proxy_response_validator=None, proxy_preserve=True, **kwargs):
+                 proxy_response_validator=None, proxy_preserve=False, **kwargs):
         self.proxylist = proxylist
         self.proxy_max_retries = proxy_max_retries
         self.proxy_response_validator = proxy_response_validator

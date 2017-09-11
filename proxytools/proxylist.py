@@ -119,17 +119,40 @@ class ProxyList:
     def get(self, strategy, **kwargs):
         return getattr(self, strategy.value)(**kwargs)
 
-    def get_random(self, exclude=[], preserve=None):
-        self.maybe_update(wait=True)
+    def _get_preserve(self, preserve):
         if preserve:
+            now = datetime.utcnow()
             proxy = self.active_proxies.get(preserve, None)
-            if proxy and proxy.in_use < self.max_simultaneous:
+            if (proxy and proxy.in_use < self.max_simultaneous and
+               (now - proxy.success_at).total_seconds() > self.rest):
                 proxy.in_use += 1
                 return proxy
+
+    def _get_ready_proxies(self, rest, exclude):
+        now = datetime.utcnow()
+        return [p for p in self.active_proxies.values()
+                if p.in_use < self.max_simultaneous and
+                p.addr not in exclude and
+                (now - p.success_at).total_seconds() > rest]
+
+    def get_fastest(self, rest=0, exclude=[], preserve=None):
+        self.maybe_update(wait=True)
+        preserve = self._get_preserve(preserve)
+        if preserve:
+            return preserve
+        for proxy in sorted(self._get_ready_proxies(rest, exclude), reverse=True,
+                            key=lambda p: p.speed or 0 / (p.in_use + 1)):
+            proxy.in_use += 1
+            return proxy
+        raise InsufficientProxiesError()
+
+    def get_random(self, rest=0, exclude=[], preserve=None):
+        self.maybe_update(wait=True)
+        preserve = self._get_preserve(preserve)
+        if preserve:
+            return preserve
         try:
-            proxy = random.choice([p for p in self.active_proxies.values()
-                                   if p.in_use < self.max_simultaneous and
-                                   p.addr not in exclude])
+            proxy = random.choice(self._get_ready_proxies(exclude))
         except IndexError:
             raise InsufficientProxiesError()
         proxy.in_use += 1
