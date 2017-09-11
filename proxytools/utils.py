@@ -85,8 +85,10 @@ def gevent_monkey_patch():
 
 
 def to_isoformat(dt):
-    assert not dt.tzinfo  # assuming we operate naive datetimes in utc
-    return dt.isoformat(timespec='seconds') + 'Z'
+    if dt.tzinfo:
+        return dt.isoformat()
+    # assuming we operate naive datetimes in utc
+    return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def from_isoformat(dt):
