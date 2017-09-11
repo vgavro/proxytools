@@ -61,10 +61,12 @@ def _call_with_proxylist(obj, proxylist, func, *args, **kwargs):
     proxy_max_retries = kwargs.pop('proxy_max_retries')
     proxy_response_validator = kwargs.pop('proxy_response_validator')
     proxy_preserve = kwargs.pop('proxy_preserve')
+    proxy_rest = kwargs.pop('proxy_rest')
 
     exclude = []
     for _ in range(proxy_max_retries):
-        proxy = proxylist.get_fastest(exclude=exclude, preserve=obj._preserve_addr)
+        proxy = proxylist.get_fastest(exclude=exclude, preserve=obj._preserve_addr,
+                                      rest=proxy_rest)
         kwargs['proxies'] = {'http': proxy.url, 'https': proxy.url}
         exc_ = None  # workaround for "smart" python3 variable clearing
         try:
@@ -107,11 +109,12 @@ class SharedProxyManagerHTTPAdapter(HTTPAdapter):
 
 class ProxyListHTTPAdapter(SharedProxyManagerHTTPAdapter):
     def __init__(self, proxylist, proxy_max_retries=PROXY_MAX_RETRIES_DEFAULT,
-                 proxy_response_validator=None, proxy_preserve=False, **kwargs):
+                 proxy_response_validator=None, proxy_preserve=False, proxy_rest=0, **kwargs):
         self.proxylist = proxylist
         self.proxy_max_retries = proxy_max_retries
         self.proxy_response_validator = proxy_response_validator
         self.proxy_preserve = proxy_preserve
+        self.proxy_rest = proxy_rest
         self._preserve_addr = None
         super().__init__(proxylist.proxy_pool_manager, **kwargs)
 
@@ -119,6 +122,7 @@ class ProxyListHTTPAdapter(SharedProxyManagerHTTPAdapter):
         kwargs.setdefault('proxy_max_retries', self.proxy_max_retries)
         kwargs.setdefault('proxy_response_validator', self.proxy_response_validator)
         kwargs.setdefault('proxy_preserve', self.proxy_preserve)
+        kwargs.setdefault('proxy_rest', self.proxy_rest)
         return _call_with_proxylist(self, self.proxylist, super().send, *args, **kwargs)
 
 
@@ -179,11 +183,13 @@ class ProxyListSession(RegexpMountSession, ConfigurableSession):
     timeout = TIMEOUT_DEFAULT
 
     def __init__(self, proxylist, proxy_max_retries=PROXY_MAX_RETRIES_DEFAULT,
-                 proxy_response_validator=None, proxy_preserve=True, **kwargs):
+                 proxy_response_validator=None, proxy_preserve=False,
+                 proxy_rest=0, **kwargs):
         self.proxylist = proxylist
         self.proxy_max_retries = proxy_max_retries
         self.proxy_response_validator = proxy_response_validator
         self.proxy_preserve = proxy_preserve
+        self.proxy_rest = proxy_rest
         self._preserve_addr = None
 
         adapter = SharedProxyManagerHTTPAdapter(proxylist.proxy_pool_manager)
@@ -195,4 +201,5 @@ class ProxyListSession(RegexpMountSession, ConfigurableSession):
         kwargs.setdefault('proxy_max_retries', self.proxy_max_retries)
         kwargs.setdefault('proxy_response_validator', self.proxy_response_validator)
         kwargs.setdefault('proxy_preserve', self.proxy_preserve)
+        kwargs.setdefault('proxy_rest', self.proxy_rest)
         return _call_with_proxylist(self, self.proxylist, super().request, *args, **kwargs)
