@@ -48,7 +48,7 @@ class ResponseMatch:
             for header, content in self.header:
                 has_header = header in resp.headers
                 matched = ((has_header and not content) or
-                           (has_header and content and content in resp.header[header]))
+                           (has_header and content and content in resp.headers[header]))
             if not matched:
                 return False
         return True
