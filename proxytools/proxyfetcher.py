@@ -111,8 +111,8 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
     def create_session(self):
         # TODO: create session using current proxylist
         # Lazy import requests because of gevent.monkey_patch
-        import requests
-        session = requests.Session()
+        from .requests import ConfigurableSession
+        session = ConfigurableSession(timeout=10)
         session.headers['User-Agent'] = ('Mozilla/5.0 (X11; Linux x86_64) '
                                          'AppleWebKit/537.36 (KHTML, like Gecko) '
                                          'Chrome/59.0.3071.86 Safari/537.36')
@@ -142,4 +142,7 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
                 assert proxy.fetch_at > proxy.success_at, ('Proxy success_at in future: {}'
                                                            .format(proxy))
                 proxy.fetch_sources.add(self.name)
+                self.logger.debug('Fetched: %s', proxy.addr)
                 self.process_proxy(proxy)
+            else:
+                self.logger.debug('Filtered: %s', proxy.addr)
