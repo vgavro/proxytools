@@ -43,7 +43,7 @@ class ProxyChecker(AbstractProxyProcessor):
 
     def worker(self, proxy):
         if proxy.addr in self.blacklist:
-            logging.debug(f'Check blacklisted: {proxy.addr}')
+            logging.debug('Check blacklisted: %s', proxy.addr)
             return
         # Creating session each time not to hit [Errno 24] Too many open files
         session = self.create_session()
@@ -78,12 +78,12 @@ class ProxyChecker(AbstractProxyProcessor):
             # TODO: anonymity check for http
             # TODO: speed check
         except Exception as exc:
-            logging.debug(f'Check {protocol} fail: {proxy.addr}: {exc}')
+            logging.debug('Check %s fail: %s: %s', protocol, proxy.addr, exc)
             proxy.fail_at = datetime.utcnow()
             proxy.fail += 1
             return False
         else:
-            logging.debug(f'Check {protocol} success: {proxy.addr}')
+            logging.debug('Check %s success: %s', protocol, proxy.addr)
             proxy.success_at = datetime.utcnow()
             proxy.fail_at = None
             proxy.fail = 0

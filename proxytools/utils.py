@@ -147,8 +147,8 @@ class CompositeContains:
 def import_string(import_name):
     *module_parts, attr = import_name.replace(':', '.').split('.')
     if not module_parts:
-        raise ImportError(f'You must specify module and object, separated by ":" or ".", '
-                          f'got "{import_name}" instead')
+        raise ImportError('You must specify module and object, separated by ":" or ".", '
+                          'got "{}" instead'.format(import_name))
     module = import_module('.'.join(module_parts))
     return getattr(module, attr)
 

@@ -64,7 +64,7 @@ class HidemyNameProxyFetcher(ConcreteProxyFetcher):
                     success_at = now - timedelta(hours=h, minutes=m, seconds=s)
                     break
             else:
-                self.logger.warn(f'Time not matched: {tr[6].text}')
+                self.logger.warn('Time not matched: %s', tr[6].text)
                 continue
 
             yield Proxy(

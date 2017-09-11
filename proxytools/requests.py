@@ -105,7 +105,7 @@ class ConfigurableSession(Session):
             if k in _configurable_attrs:
                 setattr(self, k, v)
             else:
-                raise TypeError(f'Unknown keyword argument: {k}')
+                raise TypeError('Unknown keyword argument: %s', k)
 
     def request(self, *args, **kwargs):
         kwargs.setdefault('timeout', getattr(self, 'timeout', None))
