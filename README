@@ -17,3 +17,6 @@ https://github.com/requests/toolbelt/tree/master/requests_toolbelt/adapters
 
 for checking proxy headers and external ip:
 https://httpbin.org/get
+
+# some script (very small)
+https://github.com/acidvegas/proxytools/tree/master/proxytools
