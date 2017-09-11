@@ -12,10 +12,13 @@ PROXY_MAX_RETRIES_DEFAULT = 3
 TIMEOUT_DEFAULT = 10
 
 
-class ForgetfulCookieJar(RequestsCookieJar):
-    # from https://github.com/requests/toolbelt/blob/master/requests_toolbelt/cookies/forgetful.py
-    def set_cookie(self, *args, **kwargs):
-        return
+def repr_response(resp, full=False):
+    if not full and len(resp.content) > 128:
+        content = '{}...{}b'.format(resp.content[:128], len(resp.content))
+    else:
+        content = resp.response.content
+    return '{} {} {}: {}'.format(resp.request.method, resp.status_code,
+                                 resp.url, content)
 
 
 class ResponseMatch:
@@ -63,6 +66,7 @@ def _call_with_proxylist(obj, proxylist, func, *args, **kwargs):
     for _ in range(proxy_max_retries):
         proxy = proxylist.get_random(exclude=exclude, preserve=obj._preserve_addr)
         kwargs['proxies'] = {'http': proxy.url, 'https': proxy.url}
+        exc_ = None  # workaround for "smart" python3 variable clearing
         try:
             resp = func(*args, **kwargs)
             # TODO: clear self.proxy_manager dict to prevent overflow on many proxies?
@@ -71,6 +75,7 @@ def _call_with_proxylist(obj, proxylist, func, *args, **kwargs):
         except Exception as exc:
             proxylist.fail(proxy, exc=exc)
             exclude.append(proxy.addr)
+            exc_ = exc  # workaround for "smart" python3 variable clearing
         else:
             if not proxy_response_validator or proxy_response_validator(resp):
                 proxylist.success(proxy)
@@ -83,7 +88,15 @@ def _call_with_proxylist(obj, proxylist, func, *args, **kwargs):
                 if proxy_preserve:
                     obj._preserve_addr = None
                 exclude.append(proxy.addr)
-    raise ProxyMaxRetriesExceeded('Max retries exceeded: ' + str(proxy_max_retries))
+    reason_repr = exc_ and repr(exc_) or repr_response(resp)
+    raise ProxyMaxRetriesExceeded('Max retries exceeded: {} {}'
+                                  .format(proxy_max_retries, reason_repr))
+
+
+class ForgetfulCookieJar(RequestsCookieJar):
+    # from https://github.com/requests/toolbelt/blob/master/requests_toolbelt/cookies/forgetful.py
+    def set_cookie(self, *args, **kwargs):
+        return
 
 
 class SharedProxyManagerHTTPAdapter(HTTPAdapter):
