@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime
 
 from .models import Proxy, HTTP_TYPES, AbstractProxyProcessor
@@ -72,11 +73,12 @@ class ProxyChecker(AbstractProxyProcessor):
     def check(self, session, protocol, proxy):
         proxies = {'http': proxy.url, 'https': proxy.url}
         try:
+            strat_at = time.time()
             resp = session.get(CHECK_URLS[protocol], proxies=proxies)
+            end_at = time.time()
             resp.raise_for_status()
             assert 'origin' in resp.json()
             # TODO: anonymity check for http
-            # TODO: speed check
         except Exception as exc:
             logging.debug('Check %s fail: %s: %s', protocol, proxy.addr, exc)
             proxy.fail_at = datetime.utcnow()
@@ -87,6 +89,8 @@ class ProxyChecker(AbstractProxyProcessor):
             proxy.success_at = datetime.utcnow()
             proxy.fail_at = None
             proxy.fail = 0
+            kb = int(resp.headers.get('Content-Length')) / 1024
+            proxy.speed = round(kb / (end_at - strat_at), 2)
             return True
         finally:
             session.close()
