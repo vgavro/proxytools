@@ -61,10 +61,12 @@ def _call_with_proxylist(obj, proxylist, func, *args, **kwargs):
                 proxylist.success(proxy)
                 if proxy_preserve:
                     obj._preserve_addr = proxy.addr
-                resp._proxy = proxy  # NOTE: maybe remove it
+                resp._proxy = proxy  # NOTE: maybe remove it, test purpose only
                 return resp
             else:
                 proxylist.fail(proxy, resp=resp)
+                if proxy_preserve:
+                    obj._preserve_addr = None
                 exclude.append(proxy.addr)
     raise ProxyMaxRetriesExceeded('Max retries exceeded: ' + str(proxy_max_retries))
 
