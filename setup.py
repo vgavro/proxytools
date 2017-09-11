@@ -8,6 +8,7 @@ requires = [
     'click',
     'lxml>=3.7.3',  # for fetcher
     'cssselect>=1.0.1',  # lxml requirement for css selectors
+    'pyyaml',
 
     # development
     'ipython',
