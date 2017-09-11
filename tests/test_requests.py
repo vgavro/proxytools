@@ -1,6 +1,6 @@
 import time
 
-import gevent
+from gevent.pool import Pool
 
 from proxytools.proxylist import ProxyList
 from proxytools.proxychecker import ProxyChecker
@@ -17,11 +17,12 @@ def test_proxylist_session():
     def worker(x):
         started = time.time()
         print('Fetch start', x)
-        try:
-            resp = session.get('https://httpbin.org/get')
-            assert 'origin' in resp.json(), resp.json()
-            print('Fetch succeed', x, time.time() - started)
-        except Exception as exc:
-            print('Fetch failed', x, time.time() - started, repr(exc))
+        resp = session.get('https://httpbin.org/get')
+        assert 'origin' in resp.json(), resp.json()
+        print('Fetch succeed', x, time.time() - started, resp._proxy.addr, resp._proxy.speed)
+        # except Exception as exc:
+        #     print('Fetch failed', x, time.time() - started, repr(exc))
+    pool = Pool(5)
 
-    gevent.joinall([gevent.spawn(worker, x) for x in range(20)])
+    [pool.spawn(worker, x) for x in range(20)]
+    pool.join()

@@ -119,8 +119,13 @@ class ProxyList:
     def get(self, strategy, **kwargs):
         return getattr(self, strategy.value)(**kwargs)
 
-    def get_random(self, exclude=[]):
+    def get_random(self, exclude=[], preserve=None):
         self.maybe_update(wait=True)
+        if preserve:
+            proxy = self.active_proxies.get(preserve, None)
+            if proxy and proxy.in_use < self.max_simultaneous:
+                proxy.in_use += 1
+                return proxy
         try:
             proxy = random.choice([p for p in self.active_proxies.values()
                                    if p.in_use < self.max_simultaneous and
