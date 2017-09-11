@@ -55,14 +55,14 @@ def _call_with_proxylist(proxylist, func, *args, **kwargs):
             # TODO: keep proxy_managers in proxy_list maybe? for connection caching?
         except Exception as exc:
             proxylist.fail(proxy, exc=exc)
-            exclude.append(proxy.url)
+            exclude.append(proxy.addr)
         else:
             if not proxy_response_validator or proxy_response_validator(resp):
                 proxylist.success(proxy)
                 return resp
             else:
                 proxylist.fail(proxy, resp=resp)
-                exclude.append(proxy.url)
+                exclude.append(proxy.addr)
     raise ProxyMaxRetriesExceeded('Max retries exceeded: ' + str(proxy_max_retries))
 
 

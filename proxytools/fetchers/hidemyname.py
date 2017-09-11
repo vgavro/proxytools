@@ -15,8 +15,11 @@ class HidemyNameProxyFetcher(ConcreteProxyFetcher):
         'No': Proxy.ANONYMITY.TRANSPARENT,
     }
 
-    TIME_REGEXPS = (re.compile('()(\d+) minute?s'),
-                    re.compile('(\d+) h\. (\d+) min\.'))
+    TIME_REGEXPS = (
+        re.compile('()()(\d+) second?s'),
+        re.compile('()(\d+) minute?s()'),
+        re.compile('(\d+) h\. (\d+) min\.()'),
+    )
 
     def __init__(self, *args, pages=None, **kwargs):
         self.pages = pages
@@ -44,6 +47,7 @@ class HidemyNameProxyFetcher(ConcreteProxyFetcher):
 
     def parse_proxies(self, doc):
         tbody = doc.cssselect('table.proxy__t tbody')[0]
+        now = datetime.utcnow()
         for tr in tbody:
             types = [Proxy.TYPE[t.strip()] for t in tr[4].text.upper().split(',')]
             assert types
@@ -56,12 +60,12 @@ class HidemyNameProxyFetcher(ConcreteProxyFetcher):
             for regexp in self.TIME_REGEXPS:
                 match = regexp.match(tr[6].text)
                 if match:
-                    success_at = (datetime.utcnow() -
-                                  timedelta(hours=int(match.group(1) or 0),
-                                            minutes=int(match.group(2))))
+                    h, m, s = (int(x or 0) for x in match.groups())
+                    success_at = now - timedelta(hours=h, minutes=m, seconds=s)
                     break
             else:
-                raise AssertionError(f'Time not matched: {tr[6].text}')
+                self.logger.warn(f'Time not matched: {tr[6].text}')
+                continue
 
             yield Proxy(
                 tr[0].text + ':' + tr[1].text, types=types,

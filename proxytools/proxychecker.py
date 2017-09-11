@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from .models import Proxy, AbstractProxyProcessor
+from .models import Proxy, HTTP_TYPES, AbstractProxyProcessor
 
 
 logger = logging.getLogger(__name__)
@@ -14,10 +14,10 @@ CHECK_URLS = {
 
 
 class ProxyChecker(AbstractProxyProcessor):
-    def __init__(self, proxy=None, pool=None, pool_size=None,
-                 session=None, timeout=5, max_retries=0, retry_timeout=0,
+    def __init__(self, proxy=None, pool=None, pool_size=None, blacklist=None,
+                 session=None, timeout=10, max_retries=0, retry_timeout=0,
                  http_check=True, https_check=True, https_force_check=False):
-        super().__init__(proxy, pool, pool_size)
+        super().__init__(proxy, pool, pool_size, blacklist)
 
         self.timeout = timeout
         # TODO: not implemented
@@ -42,6 +42,9 @@ class ProxyChecker(AbstractProxyProcessor):
         return ConfigurableSession(cookies=ForgetfulCookieJar(), timeout=self.timeout)
 
     def worker(self, proxy):
+        if proxy.addr in self.blacklist:
+            logging.debug(f'Check blacklisted: {proxy.addr}')
+            return
         # Creating session each time not to hit [Errno 24] Too many open files
         session = self.create_session()
         https_support = proxy.types.intersection([Proxy.TYPE.HTTPS, Proxy.TYPE.SOCKS4,
@@ -50,7 +53,7 @@ class ProxyChecker(AbstractProxyProcessor):
         success = None
         if ((self.https_check and https_support) or self.https_force_check):
             success = self.check(session, 'https', proxy)
-            if proxy.parsed.scheme.startswith('http'):
+            if proxy.types.intersection(HTTP_TYPES):
                 if success:
                     proxy.types.add(Proxy.TYPE.HTTPS)
                 elif Proxy.TYPE.HTTPS in proxy.types:
@@ -75,15 +78,13 @@ class ProxyChecker(AbstractProxyProcessor):
             # TODO: anonymity check for http
             # TODO: speed check
         except Exception as exc:
+            logging.debug(f'Check {protocol} fail: {proxy.addr}: {exc}')
             proxy.fail_at = datetime.utcnow()
             proxy.fail += 1
-            logging.debug(f'Check {protocol} fail: {proxy.url}: {exc}')
             return False
         else:
-            logging.debug(f'Check {protocol} success: {proxy.url}')
+            logging.debug(f'Check {protocol} success: {proxy.addr}')
             proxy.success_at = datetime.utcnow()
             proxy.fail_at = None
             proxy.fail = 0
-            if proxy.parsed.scheme.startswith('http'):
-                proxy.types.add(Proxy.TYPE.HTTPS)
             return True

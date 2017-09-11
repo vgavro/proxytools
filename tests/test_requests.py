@@ -3,12 +3,14 @@ import time
 import gevent
 
 from proxytools.proxylist import ProxyList
-from proxytools.proxyfetcher import MultiProxyFetcher
+from proxytools.proxychecker import ProxyChecker
+from proxytools.proxyfetcher import ProxyFetcher
 from proxytools.requests import ProxyListSession
 
 
 def test_proxylist_session():
-    proxyfetcher = MultiProxyFetcher(MultiProxyFetcher.registry)
+    checker = ProxyChecker(http_check=False, https_force_check=True)
+    proxyfetcher = ProxyFetcher(ProxyFetcher.registry, checker=checker)
     proxylist = ProxyList(proxyfetcher, filename='./proxies.json', atexit_save=True)
     session = ProxyListSession(proxylist)
 

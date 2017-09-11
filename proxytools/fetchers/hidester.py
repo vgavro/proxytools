@@ -19,7 +19,7 @@ class HidesterProxyFetcher(ConcreteProxyFetcher):
         resp.raise_for_status()
         for proxy in resp.json():
             yield Proxy(
-                '{type}://{IP}:{PORT}'.format(**proxy),
+                '{IP}:{PORT}'.format(**proxy),
                 # NOTE: hidester just doesn't show if it's HTTPS or not
                 types=[Proxy.TYPE[proxy['type'].upper()]],
                 country=country_name_to_alpha2(proxy['country']),

@@ -1,13 +1,16 @@
+import logging
 from datetime import datetime
-import enum
 
 from .models import Proxy, AbstractProxyProcessor
-from .utils import classproperty, import_string
+from .utils import EntityLoggerAdapter, classproperty, str_to_enum, import_string
+
+
+logger = logging.getLogger(__name__)
 
 
 class ProxyFetcher(AbstractProxyProcessor):
     def __init__(self, fetchers, checker=None,
-                 proxy=None, pool=None, pool_size=None,
+                 proxy=None, pool=None, pool_size=None, blacklist=None,
                  **kwargs):
         super().__init__(proxy, pool, pool_size)
         # TODO: implement stop on limit!
@@ -18,7 +21,7 @@ class ProxyFetcher(AbstractProxyProcessor):
             # implement __setattr__ (or other magic method) for setting
             # proxyfetcher.proxy after initialization
             # to set it also on checker
-            self.checker.proxy = self.proxy
+            self.checker.proxy = self.checked_proxy
 
         self.fetchers = []
         fetcher_kwargs = {name: kwargs.pop(name, {}) for name in self.registry}
@@ -48,11 +51,17 @@ class ProxyFetcher(AbstractProxyProcessor):
             if self.checker:
                 self.checker.workers.join()
 
+    def checked_proxy(self, proxy):
+        # proxy after checking
+        # TODO: where to filter?
+        self.proxy(proxy)
+
     def process_proxy(self, proxy):
-        if self.checker:
-            self.checker(proxy)
-        else:
-            self.proxy(proxy)
+        if proxy.url not in self.blacklist:
+            if self.checker:
+                self.checker(proxy)
+            else:
+                self.proxy(proxy)
 
     @property
     def ready(self):
@@ -82,17 +91,17 @@ class ProxyFetcher(AbstractProxyProcessor):
 
 
 class ConcreteProxyFetcher(AbstractProxyProcessor):
-    def __init__(self, proxy=None, pool=None, pool_size=10,
+    def __init__(self, proxy=None, pool=None, pool_size=None, blacklist=None,
                  session=None, types=None, countries=None, anonymities=None,
                  success_delta=None):
-        super().__init__(proxy, pool, pool_size)
+        super().__init__(proxy, pool, pool_size, blacklist)
 
-        self.types = set(isinstance(t, enum.Enum) and t or Proxy.TYPE[t.upper()]
-                         for t in types)
+        self.types = types and set(str_to_enum(t, Proxy.TYPE) for t in types) or None
         self.countries = countries
         self.anonymities = anonymities
         self.success_delta = success_delta
 
+        self.logger = EntityLoggerAdapter(logger, self.name)
         self.session = session or self.create_session()
 
     @classproperty

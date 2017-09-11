@@ -9,6 +9,7 @@ import atexit
 from gevent.lock import Semaphore
 
 from .models import Proxy
+from .utils import CompositeContains
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +31,6 @@ class ProxyList:
                  filename=None, atexit_save=False):
         if min_size <= 0:
             raise ValueError('min_size must be positive')
-        if fetcher:
-            fetcher.add = self.add
         self.fetcher = fetcher
         self.min_size = min_size
         self.max_fail = max_fail
@@ -49,6 +48,12 @@ class ProxyList:
                 atexit_save = filename
             atexit.register(self.save, atexit_save)
 
+        if fetcher:
+            fetcher.proxy = self.proxy
+            if fetcher.checker:
+                blacklist = CompositeContains(self.active_proxies,
+                                              self.blacklist_proxies)
+                fetcher.checker.blacklist = blacklist
         self.maybe_update()
 
         # Dictionary to use shared connection pools between sessions
@@ -70,35 +75,38 @@ class ProxyList:
         if wait and self.fetcher and self.ready.locked():
             self.ready.wait()
 
-    def add(self, proxy):
-        if proxy.url in self.active_proxies:
-            self.active_proxies[proxy.url].merge_meta(proxy)
-            return False
-        elif proxy.url in self.blacklist_proxies:
-            self.blacklist_proxies[proxy.url].merge_meta(proxy)
-            return False
+    def proxy(self, proxy):
+        if proxy.fail_at and proxy.fail_at > proxy.success_at:
+            self.blacklist(proxy)
+
+        elif proxy.addr in self.active_proxies:
+            self.active_proxies[proxy.addr].merge_meta(proxy)
+
+        elif proxy.addr in self.blacklist_proxies:
+            self.blacklist_proxies[proxy.addr].merge_meta(proxy)
+
         else:
-            self.active_proxies[proxy.url] = proxy
+            self.active_proxies[proxy.addr] = proxy
             if self.ready.locked:
                 self.ready.release()
-            return True
 
     def fail(self, proxy, exc=None, resp=None):
         proxy.fail_at = datetime.utcnow()
         proxy.fail += 1
         proxy.in_use -= 1
         assert proxy.in_use >= 0
-        if proxy.url in self.active_proxies:
+        if proxy.addr in self.active_proxies:
             if proxy.fail >= self.max_fail:
                 self.blacklist(proxy)
 
     def blacklist(self, proxy):
-        if proxy.url in self.active_proxies:
-            del self.active_proxies[proxy.url]
-        self.blacklist_proxies[proxy.url] = proxy
-        if proxy.url in self.proxy_pool_manager:
-            self.proxy_pool_manager[proxy.url].close()
-            del self.proxy_pool_manager[proxy.url]
+        if proxy.addr in self.active_proxies:
+            del self.active_proxies[proxy.addr]
+        self.blacklist_proxies[proxy.addr] = proxy
+        # TODO: there is urls in proxy_pool_manager!
+        if proxy.addr in self.proxy_pool_manager:
+            self.proxy_pool_manager[proxy.addr].close()
+            del self.proxy_pool_manager[proxy.addr]
         self.maybe_update()
 
     def success(self, proxy):
@@ -116,7 +124,7 @@ class ProxyList:
         try:
             proxy = random.choice([p for p in self.active_proxies.values()
                                    if p.in_use < self.max_simultaneous and
-                                   p.url not in exclude])
+                                   p.addr not in exclude])
         except IndexError:
             raise InsufficientProxiesError()
         proxy.in_use += 1
@@ -127,7 +135,7 @@ class ProxyList:
             before = datetime.utcnow() - timedelta
         for proxy in tuple(self.blacklist_proxies.values()):
             if proxy.fail_at < before:
-                del self.blacklist_proxies[proxy.url]
+                del self.blacklist_proxies[proxy.addr]
 
     def load(self, filename):
         with open(filename, 'r') as fh:
@@ -138,7 +146,7 @@ class ProxyList:
                 proxies = getattr(self, key)
                 for proxy in data[key]:
                     proxy = Proxy.from_json(proxy)
-                    proxies[proxy.url] = proxy
+                    proxies[proxy.addr] = proxy
         else:
             for proxy in data:
                 self.add(Proxy.from_json(proxy))

@@ -9,7 +9,7 @@ import yaml
 
 from .proxyfetcher import ProxyFetcher
 from .proxychecker import ProxyChecker
-from .utils import dict_merge, JSONEncoder, gevent_monkey_patch
+from .utils import dict_merge, JSONEncoder, CompositeContains, gevent_monkey_patch
 
 
 DEFAULT_LOGGING_CONFIG = {
@@ -33,6 +33,8 @@ def configure_logging(config):
         conf['level_styles'] = dict_merge(coloredlogs.DEFAULT_LEVEL_STYLES,
                                           conf.pop('level_styles', {}), copy=True)
         coloredlogs.install(**conf)
+    else:
+        del config['coloredlogs']  # in case 'coloredlogs': null or {}
 
     config.setdefault('version', 1)
     logging.config.dictConfig(config)
@@ -95,6 +97,8 @@ def cli(*options):
               'Use "*" for all registered.')),
     option('--check/--no-check', default=False,
         help='Run local checker on fetched proxies.'),
+    option('-p', '--pool', 'pool_size', type=int, default=None,
+        help='Pool size (defaults {ProxyFetcher.POOL_SIZE_DEFAULT}).'),
     option('--https-only', is_flag=True,
         help='Fetch only proxies with https support (with socks proxies).'),
     option('--no-socks', is_flag=True,
@@ -104,29 +108,38 @@ def cli(*options):
     option('-s', '--save', required=False,
         help='Save(JSON) proxies to file (stdout by default).')
 )
-def fetcher(config, show_list, fetchers, check,
+def fetcher(config, show_list, fetchers, check, pool_size,
             https_only, http_check_https, no_socks, save):
     if show_list:
         for fetcher in ProxyFetcher.registry.values():
             echo(fetcher.name +' '+ fetcher.__module__ + ':' + fetcher.__name__)
         return
 
+    proxies = OrderedDict()
+
     checker = None
     if check:
         conf = config.get('proxyfetcher', {})
         if http_check_https:
             conf['https_force_check'] = True
+        if pool_size:
+            conf['pool_size'] = pool_size
+        blacklist = conf.pop('blacklist', None)
+        if not blacklist:
+            conf['blacklist'] = proxies
+        else:
+            # Do not check already checked proxies
+            conf['blacklist'] = CompositeContains(blacklist, proxies)
+
         checker = ProxyChecker(**conf)
 
     json_encoder = JSONEncoder(**config.get('json', {}))
 
-    proxies = OrderedDict()
-
     def proxy(proxy):
-        if proxy.url in proxies:
-            proxies[proxy.url].merge_meta(proxy)
+        if proxy.addr in proxies:
+            proxies[proxy.addr].merge_meta(proxy)
         else:
-            proxies[proxy.url] = proxy
+            proxies[proxy.addr] = proxy
 
     conf = config.get('proxyfetcher', {})
     fetchers_ = conf.pop('fetchers', None)
@@ -146,6 +159,8 @@ def fetcher(config, show_list, fetchers, check,
     if not types:
         raise BadOptionUsage('Proxy types appears to be empty. '
                              'Check config and options compability.')
+    if pool_size:
+        conf['pool_size'] = pool_size
 
     fetcher = ProxyFetcher(fetchers_, checker=checker, proxy=proxy, types=types, **conf)
 

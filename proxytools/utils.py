@@ -129,6 +129,21 @@ class JSONEncoder(json.JSONEncoder):
                 fp.write(chunk)
 
 
+def str_to_enum(value, enum_cls):
+    return isinstance(value, enum.Enum) and value or enum_cls[value.upper()]
+
+
+class CompositeContains:
+    def __init__(self, *objects):
+        self.objects = objects
+
+    def __contains__(self, value):
+        for obj in self.objects:
+            if value in obj:
+                return True
+        return False
+
+
 def import_string(import_name):
     *module_parts, attr = import_name.replace(':', '.').split('.')
     if not module_parts:
