@@ -37,7 +37,7 @@ class ProxyFetcher(AbstractProxyProcessor):
                                   pool=self.pool, **kwargs)
             else:
                 if fetcher_kwargs[fetcher.name]:
-                    raise ValueError(f'{fetcher.name} already initialized')
+                    raise ValueError('{} already initialized'.format(fetcher.name))
                 fetcher.pool = self.pool
                 fetcher.proxy = self.process_proxy
             self.fetchers.append(fetcher)
@@ -139,6 +139,7 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
             assert isinstance(proxy, Proxy)
             if self.filter(proxy, now=now):
                 proxy.fetch_at = now
-                assert proxy.fetch_at > proxy.success_at, f'Proxy success_at in future: {proxy}'
+                assert proxy.fetch_at > proxy.success_at, ('Proxy success_at in future: {}'
+                                                           .format(proxy))
                 proxy.fetch_sources.add(self.name)
                 self.process_proxy(proxy)
