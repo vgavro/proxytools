@@ -63,6 +63,11 @@ class ProxyList:
     def need_update(self):
         return len(self.active_proxies) < self.min_size
 
+    def stats(self):
+        return ('(active:{} blacklist:{} fetcher:{})'
+                .format(len(self.active_proxies), len(self.blacklist),
+                self.fetcher.ready and 'ready' or 'processing'))
+
     def maybe_update(self, wait=False):
         if not len(self.active_proxies):
             if self.fetcher:
@@ -71,9 +76,12 @@ class ProxyList:
             else:
                 raise InsufficientProxiesError()
         if self.need_update and self.fetcher and self.fetcher.ready:
+            logger.info('Starting to fetch %s', self.stats())
             self.fetcher()
         if wait and self.fetcher and self.ready.locked():
+            logger.info('Wait fetch %s', self.stats)
             self.ready.wait()
+            logger.info('After wait fetch %s', self.stats())
 
     def proxy(self, proxy):
         if proxy.fail_at and proxy.fail_at > proxy.success_at:
@@ -103,10 +111,10 @@ class ProxyList:
         if proxy.addr in self.active_proxies:
             del self.active_proxies[proxy.addr]
         self.blacklist_proxies[proxy.addr] = proxy
-        # TODO: there is urls in proxy_pool_manager!
         if proxy.url in self.proxy_pool_manager:
             self.proxy_pool_manager[proxy.url].clear()
             del self.proxy_pool_manager[proxy.url]
+        logger.debug('Blacklisted: %s %s', proxy.addr, self.stats())
         self.maybe_update()
 
     def success(self, proxy):

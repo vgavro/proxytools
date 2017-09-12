@@ -135,7 +135,8 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
         if not result:
             return
         now = datetime.utcnow()
-        for proxy in worker(*args, **kwargs):
+        filtered = 0
+        for count, proxy in enumerate(worker(*args, **kwargs)):
             assert isinstance(proxy, Proxy)
             if self.filter(proxy, now=now):
                 proxy.fetch_at = now
@@ -145,4 +146,6 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
                 self.logger.debug('Fetched: %s', proxy.addr)
                 self.process_proxy(proxy)
             else:
+                filtered += 1
                 self.logger.debug('Filtered: %s', proxy.addr)
+        self.logger.info('Fetched: %s, filtered: %s', count + 1 - filtered, filtered)
