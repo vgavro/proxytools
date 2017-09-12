@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 
 
 class GET_STRATEGY(enum.Enum):
-    RANDOM = 'get_random'
+    RANDOM = '_get_random'
+    FASTEST = '_get_fastest'
 
 
 class InsufficientProxiesError(RuntimeError):
@@ -28,13 +29,14 @@ class ProxyMaxRetriesExceeded(RuntimeError):
 
 class ProxyList:
     def __init__(self, fetcher=None, min_size=50, max_fail=3, max_simultaneous=2,
-                 filename=None, atexit_save=False):
+                 rest=0, filename=None, atexit_save=False):
         if min_size <= 0:
             raise ValueError('min_size must be positive')
         self.fetcher = fetcher
         self.min_size = min_size
         self.max_fail = max_fail
         self.max_simultaneous = max_simultaneous
+        self.rest = 0  # timeout for proxy to rest after success
 
         self.ready = Semaphore()
         self.active_proxies = {}
@@ -69,7 +71,8 @@ class ProxyList:
                 self.ready.acquire(blocking=False)
                 assert self.need_update
             else:
-                raise InsufficientProxiesError()
+                raise InsufficientProxiesError('Insufficient proxies {}'
+                                               .format(self.stats()))
         if self.need_update and self.fetcher and self.fetcher.ready:
             self.fetcher()
         if wait and self.fetcher and self.ready.locked():
@@ -116,47 +119,51 @@ class ProxyList:
         proxy.in_use -= 1
         assert proxy.in_use >= 0
 
-    def get(self, strategy, **kwargs):
-        return getattr(self, strategy.value)(**kwargs)
-
-    def _get_preserve(self, preserve):
-        if preserve:
-            now = datetime.utcnow()
-            proxy = self.active_proxies.get(preserve, None)
-            if (proxy and proxy.in_use < self.max_simultaneous and
-               (now - proxy.success_at).total_seconds() > self.rest):
-                proxy.in_use += 1
-                return proxy
-
-    def _get_ready_proxies(self, rest, exclude):
+    def get_ready_proxies(self, rest=None, exclude=[]):
         now = datetime.utcnow()
-        return [p for p in self.active_proxies.values()
-                if p.in_use < self.max_simultaneous and
-                p.addr not in exclude and
-                (now - p.success_at).total_seconds() > rest]
+        rest = rest is None and self.rest or rest
+        return {
+            p.addr: p
+            for p in self.active_proxies.values()
+            if p.in_use < self.max_simultaneous and
+            p.addr not in exclude and
+            (now - p.success_at).total_seconds() > rest
+        }
 
-    def get_fastest(self, rest=0, exclude=[], preserve=None):
+    def get(self, strategy, rest=None, exclude=[], preserve=None):
+        if isinstance(strategy, enum.Enum):
+            strategy = getattr(self, strategy.value)
+
         self.maybe_update(wait=True)
-        preserve = self._get_preserve(preserve)
+        ready_proxies = self.get_ready_proxies(rest, exclude)
         if preserve:
-            return preserve
-        for proxy in sorted(self._get_ready_proxies(rest, exclude), reverse=True,
-                            key=lambda p: p.speed or 0 / (p.in_use + 1)):
+            preserve = ready_proxies.get(preserve, None)
+            if preserve:
+                preserve.in_use += 1
+                return preserve
+        proxy = strategy(ready_proxies)
+        if proxy:
             proxy.in_use += 1
             return proxy
-        raise InsufficientProxiesError()
+        raise InsufficientProxiesError('Insufficient proxies {}'
+                                       .format(self.stats()))
 
-    def get_random(self, rest=0, exclude=[], preserve=None):
-        self.maybe_update(wait=True)
-        preserve = self._get_preserve(preserve)
-        if preserve:
-            return preserve
+    def _get_random(self, proxies):
         try:
-            proxy = random.choice(self._get_ready_proxies(exclude))
+            return random.choice(tuple(proxies.values()))
         except IndexError:
-            raise InsufficientProxiesError()
-        proxy.in_use += 1
-        return proxy
+            return None
+
+    def _get_fastest(self, proxies):
+        for proxy in sorted(proxies.values(), reverse=True,
+                            key=lambda p: p.speed or 0 / (p.in_use + 1)):
+            return proxy
+
+    def get_fastest(self, **kwargs):
+        return self.get(self._get_fastest, **kwargs)
+
+    def get_random(self, **kwargs):
+        return self.get(self._get_random, **kwargs)
 
     def forget_blacklist(self, before):
         if isinstance(before, timedelta):
@@ -167,7 +174,6 @@ class ProxyList:
 
     def load(self, filename):
         with open(filename, 'r') as fh:
-            print(fh)
             data = json.load(fh)
         if isinstance(data, dict):
             for key in ('active_proxies', 'blacklist_proxies'):
