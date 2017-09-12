@@ -7,6 +7,7 @@ import os.path
 import atexit
 
 from gevent.lock import Semaphore
+from gevent.thread import get_ident
 
 from .models import Proxy
 from .utils import CompositeContains
@@ -38,7 +39,7 @@ class ProxyList:
         self.max_simultaneous = max_simultaneous
         self.rest = 0  # timeout for proxy to rest after success
 
-        self.ready = Semaphore()
+        self.next_proxy_lock = Semaphore()
         self.active_proxies = {}
         self.blacklist_proxies = {}
 
@@ -53,38 +54,33 @@ class ProxyList:
         if fetcher:
             fetcher.proxy = self.proxy
             if fetcher.checker:
-                blacklist = CompositeContains(self.active_proxies,
-                                              self.blacklist_proxies)
-                fetcher.checker.blacklist = blacklist
-        self.maybe_update()
+                fetcher.blacklist = CompositeContains(self.active_proxies,
+                                                      self.blacklist_proxies)
 
         # Dictionary to use shared connection pools between sessions
         self.proxy_pool_manager = {}
+
+        if self.need_update and self.fetcher and self.fetcher.ready:
+            logger.info('Start fetch %s', self._stats_str)
+            self.fetcher()
 
     @property
     def need_update(self):
         return len(self.active_proxies) < self.min_size
 
-    def stats(self):
+    @property
+    def _stats_str(self):
         return ('(active:{} blacklist:{} fetcher:{})'
-                .format(len(self.active_proxies), len(self.blacklist),
-                self.fetcher.ready and 'ready' or 'processing'))
+                .format(len(self.active_proxies), len(self.blacklist_proxies),
+                        self.fetcher.ready and 'ready' or 'working'))
 
-    def maybe_update(self, wait=False):
-        if not len(self.active_proxies):
-            if self.fetcher:
-                self.ready.acquire(blocking=False)
-                assert self.need_update
-            else:
-                raise InsufficientProxiesError('Insufficient proxies {}'
-                                               .format(self.stats()))
+    def maybe_update(self):
+        if not len(self.active_proxies) and not self.fetcher:
+            raise InsufficientProxiesError('Insufficient proxies {}'
+                                           .format(self._stats_str))
         if self.need_update and self.fetcher and self.fetcher.ready:
-            logger.info('Starting to fetch %s', self.stats())
+            logger.info('Start fetch %s', self._stats_str)
             self.fetcher()
-        if wait and self.fetcher and self.ready.locked():
-            logger.info('Wait fetch %s', self.stats)
-            self.ready.wait()
-            logger.info('After wait fetch %s', self.stats())
 
     def proxy(self, proxy):
         if proxy.fail_at and proxy.fail_at > proxy.success_at:
@@ -98,8 +94,7 @@ class ProxyList:
 
         else:
             self.active_proxies[proxy.addr] = proxy
-            if self.ready.locked:
-                self.ready.release()
+            self.next_proxy_lock.release()
 
     def fail(self, proxy, exc=None, resp=None):
         proxy.fail_at = datetime.utcnow()
@@ -117,7 +112,7 @@ class ProxyList:
         if proxy.url in self.proxy_pool_manager:
             self.proxy_pool_manager[proxy.url].clear()
             del self.proxy_pool_manager[proxy.url]
-        logger.debug('Blacklisted: %s %s', proxy.addr, self.stats())
+        logger.debug('Blacklist: %s %s', proxy.addr, self._stats_str)
         self.maybe_update()
 
     def success(self, proxy):
@@ -129,21 +124,36 @@ class ProxyList:
 
     def get_ready_proxies(self, rest=None, exclude=[]):
         now = datetime.utcnow()
-        rest = rest is None and self.rest or rest
+        rest = self.rest if rest is None else rest
         return {
-            p.addr: p
-            for p in self.active_proxies.values()
+            addr: p
+            for addr, p in self.active_proxies.items()
             if p.in_use < self.max_simultaneous and
-            p.addr not in exclude and
+            addr not in exclude and
             (now - p.success_at).total_seconds() > rest
         }
 
-    def get(self, strategy, rest=None, exclude=[], preserve=None):
+    def get(self, strategy, rest=None, exclude=[], preserve=None, wait=True):
         if isinstance(strategy, enum.Enum):
             strategy = getattr(self, strategy.value)
 
-        self.maybe_update(wait=True)
-        ready_proxies = self.get_ready_proxies(rest, exclude)
+        self.maybe_update()
+        while True:
+            ready_proxies = self.get_ready_proxies(rest, exclude)
+            if ready_proxies:
+                break
+            else:
+                if not self.fetcher or self.fetcher.ready:
+                    raise InsufficientProxiesError('Insufficient proxies {}'
+                                                   .format(self._stats_str))
+                elif wait:
+                    logger.info('Wait proxy (thread %s) %s', get_ident(),
+                                self._stats_str)
+                    self.next_proxy_lock.acquire(blocking=False)
+                    self.next_proxy_lock.wait(None if wait is True else wait)
+                else:
+                    break
+
         if preserve:
             preserve = ready_proxies.get(preserve, None)
             if preserve:
@@ -154,7 +164,7 @@ class ProxyList:
             proxy.in_use += 1
             return proxy
         raise InsufficientProxiesError('Insufficient proxies {}'
-                                       .format(self.stats()))
+                                       .format(self._stats_str))
 
     def _get_random(self, proxies):
         try:
