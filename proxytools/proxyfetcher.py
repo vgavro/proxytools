@@ -142,8 +142,9 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
                 proxy.success_at = datetime.utcnow() - proxy.success_at
             if self.filter(proxy, now=now):
                 proxy.fetch_at = now
-                assert proxy.fetch_at >= proxy.success_at, ('Proxy success_at in future: {}'
-                                                            .format(proxy))
+                if proxy.success_at:
+                    assert now >= proxy.success_at, ('Proxy success_at in future: {}'
+                                                     .format(proxy))
                 proxy.fetch_sources.add(self.name)
                 self.logger.debug('Fetched: %s', proxy.addr)
                 self.process_proxy(proxy)

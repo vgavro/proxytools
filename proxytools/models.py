@@ -42,7 +42,7 @@ class Proxy:
         if TYPE.HTTP not in types:
             anonymity = ANONYMITY.HIGH
         else:
-            anonymity = str_to_enum(anonymity, ANONYMITY)
+            anonymity = anonymity and str_to_enum(anonymity, ANONYMITY) or None
 
         (self.addr, self.types, self.anonymity, self.country, self.speed,
          self.fetch_at, self.fetch_sources,
