@@ -1,5 +1,6 @@
 import re
-from datetime import datetime, timedelta
+from datetime import timedelta
+
 from lxml import html
 
 from ..proxyfetcher import ConcreteProxyFetcher, Proxy
@@ -16,10 +17,18 @@ class HidemyNameProxyFetcher(ConcreteProxyFetcher):
     }
 
     TIME_REGEXPS = (
-        re.compile('()()(\d+) second?s'),
-        re.compile('()(\d+) minute?s()'),
+        re.compile('()()(\d+) seconds?'),
+        re.compile('()(\d+) minutes?()'),
         re.compile('(\d+) h\. (\d+) min\.()'),
     )
+
+    def _parse_time(self, value):
+        for regexp in self.TIME_REGEXPS:
+            match = regexp.match(value)
+            if match:
+                h, m, s = (int(x or 0) for x in match.groups())
+                return timedelta(hours=h, minutes=m, seconds=s)
+        self.logger.warn('Time not matched: %s', value)
 
     def __init__(self, *args, pages=None, **kwargs):
         self.pages = pages
@@ -47,7 +56,6 @@ class HidemyNameProxyFetcher(ConcreteProxyFetcher):
 
     def parse_proxies(self, doc):
         tbody = doc.cssselect('table.proxy__t tbody')[0]
-        now = datetime.utcnow()
         for tr in tbody:
             types = [Proxy.TYPE[t.strip()] for t in tr[4].text.upper().split(',')]
             assert types
@@ -57,18 +65,8 @@ class HidemyNameProxyFetcher(ConcreteProxyFetcher):
             assert _span_cls[-3] == '-', _span_cls
             country = _span_cls[-2:].upper()
 
-            for regexp in self.TIME_REGEXPS:
-                match = regexp.match(tr[6].text)
-                if match:
-                    h, m, s = (int(x or 0) for x in match.groups())
-                    success_at = now - timedelta(hours=h, minutes=m, seconds=s)
-                    break
-            else:
-                self.logger.warn('Time not matched: %s', tr[6].text)
-                continue
-
             yield Proxy(
                 tr[0].text + ':' + tr[1].text, types=types,
                 anonymity=self.ANONYMITY_MAP[tr[5].text],
-                country=country, success_at=success_at
+                country=country, success_at=self._parse_time(tr[6].text)
             )

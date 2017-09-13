@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .models import Proxy, AbstractProxyProcessor
 from .utils import EntityLoggerAdapter, classproperty, str_to_enum, import_string
@@ -138,6 +138,8 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
         filtered = 0
         for count, proxy in enumerate(worker(*args, **kwargs)):
             assert isinstance(proxy, Proxy)
+            if proxy.success_at and isinstance(proxy.success_at, timedelta):
+                proxy.success_at = datetime.utcnow() - proxy.success_at
             if self.filter(proxy, now=now):
                 proxy.fetch_at = now
                 assert proxy.fetch_at > proxy.success_at, ('Proxy success_at in future: {}'
