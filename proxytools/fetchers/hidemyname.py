@@ -1,7 +1,5 @@
-import re
-from datetime import timedelta
-
 from lxml import html
+from pytimeparse.timeparse import timeparse
 
 from ..proxyfetcher import ConcreteProxyFetcher, Proxy
 
@@ -15,20 +13,6 @@ class HidemyNameProxyFetcher(ConcreteProxyFetcher):
         'Low': Proxy.ANONYMITY.ANONYMOUS,
         'No': Proxy.ANONYMITY.TRANSPARENT,
     }
-
-    TIME_REGEXPS = (
-        re.compile('()()(\d+) seconds?'),
-        re.compile('()(\d+) minutes?()'),
-        re.compile('(\d+) h\. (\d+) min\.()'),
-    )
-
-    def _parse_time(self, value):
-        for regexp in self.TIME_REGEXPS:
-            match = regexp.match(value)
-            if match:
-                h, m, s = (int(x or 0) for x in match.groups())
-                return timedelta(hours=h, minutes=m, seconds=s)
-        self.logger.warn('Time not matched: %s', value)
 
     def __init__(self, *args, pages=None, **kwargs):
         self.pages = pages
@@ -68,5 +52,5 @@ class HidemyNameProxyFetcher(ConcreteProxyFetcher):
             yield Proxy(
                 tr[0].text + ':' + tr[1].text, types=types,
                 anonymity=self.ANONYMITY_MAP[tr[5].text],
-                country=country, success_at=self._parse_time(tr[6].text)
+                country=country, success_at=timeparse(tr[6].text.replace('.', ''))
             )

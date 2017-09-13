@@ -1,7 +1,5 @@
-import re
-from datetime import timedelta
-
 from lxml import html
+from pytimeparse.timeparse import timeparse
 
 from ..proxyfetcher import ConcreteProxyFetcher, Proxy
 
@@ -28,21 +26,6 @@ class FreeProxyListNet(ConcreteProxyFetcher):
         'Socks5': (Proxy.TYPE.SOCKS5,),
     }
 
-    TIME_REGEXPS = (
-        re.compile('()()(\d+) seconds? ago'),
-        re.compile('()(\d+)() minutes? ago'),
-        re.compile('(\d+) hours?()() ago'),
-        re.compile('(\d+) hours? (\d+)() minutes? ago'),
-    )
-
-    def _parse_time(self, value):
-        for regexp in self.TIME_REGEXPS:
-            match = regexp.match(value)
-            if match:
-                h, m, s = (int(x or 0) for x in match.groups())
-                return timedelta(hours=h, minutes=m, seconds=s)
-        self.logger.warn('Time not matched: %s', value)
-
     def _parse_country(self, value):
         return value if value != 'Unknown' else None
 
@@ -52,7 +35,7 @@ class FreeProxyListNet(ConcreteProxyFetcher):
             types=self.HTTPS_TYPES_MAP[tr[6].text],  # "Https" field
             country=self._parse_country(tr[2].text),
             anonymity=self.ANONYMITY_MAP[tr[4].text],
-            success_at=self._parse_time(tr[7].text),
+            success_at=timeparse(tr[7].text.replace(' ago', '')),
         )
 
     def _parse_socks_proxy_row(self, tr):
@@ -60,7 +43,7 @@ class FreeProxyListNet(ConcreteProxyFetcher):
             tr[0].text + ':' + tr[1].text,
             types=self.SOCKS_TYPES_MAP[tr[4].text],
             country=self._parse_country(tr[2].text),
-            success_at=self._parse_time(tr[7].text),
+            success_at=timeparse(tr[7].text.replace(' ago', '')),
         )
 
     def worker(self):

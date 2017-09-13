@@ -1,13 +1,19 @@
 from setuptools import setup, find_packages
 
 requires = [
+    # core
     'requests[socks]>=2.13',
     'gevent',
+
+    # proxy fetcher utils
     'pycountry',
     'pycountry-convert',
-    'click',
-    'lxml>=3.7.3',  # for fetcher
+    'pytimeparse',
+    'lxml>=3.7.3',
     'cssselect>=1.0.1',  # lxml requirement for css selectors
+
+    # cli
+    'click',
     'pyyaml',
 
     # development

@@ -1,9 +1,8 @@
-import re
-from datetime import timedelta
 from shutil import which
 
 from gevent.subprocess import run, PIPE
 from lxml import html
+from pytimeparse.timeparse import timeparse
 
 from ..proxyfetcher import ConcreteProxyFetcher, Proxy
 from ..utils import country_name_to_alpha2
@@ -12,19 +11,6 @@ from ..utils import country_name_to_alpha2
 class TorVpnProxyFetcher(ConcreteProxyFetcher):
     ROOT_URL = 'https://www.torvpn.com'
     PROXY_URL = ROOT_URL + '/en/proxy-list'
-
-    TIME_REGEXPS = (
-        re.compile('()()(\s+)s'),
-        re.compile('()(\d+)()m'),
-    )
-
-    def _parse_time(self, value):
-        for regexp in self.TIME_REGEXPS:
-            match = regexp.match(value)
-            if match:
-                h, m, s = (int(x or 0) for x in match.groups())
-                return timedelta(hours=h, minutes=m, seconds=s)
-        self.logger.warn('Time not matched: %s', value)
 
     def __init__(self, *args, **kwargs):
         self.convert = kwargs.pop('convert', which('convert'))
@@ -49,6 +35,7 @@ class TorVpnProxyFetcher(ConcreteProxyFetcher):
 
             country = tr[3][0].text
             country = country != 'Unknown' and country_name_to_alpha2(country) or None
+            success_at = timeparse(tr[9].text)
 
             types, capabilities = [], tr[5].text_content().strip()
             if 'HTTP' in capabilities:
@@ -61,11 +48,10 @@ class TorVpnProxyFetcher(ConcreteProxyFetcher):
                 continue
             # assert types, 'Unknown capabilities: {}'.format(capabilities)
 
-            success_at = self._parse_time(tr[9].text)
+            self.spawn(self.proxy_worker, ip_url, port,
+                       country=country, types=types, success_at=success_at)
 
-            self.spawn(self.proxy_worker, ip_url, port, country, types, success_at)
-
-    def proxy_worker(self, ip_url, port, country, types, success_at):
+    def proxy_worker(self, ip_url, port, **kwargs):
         assert ip_url.startswith('/')
         resp = self.session.get(self.ROOT_URL + ip_url)
         resp.raise_for_status()
@@ -74,4 +60,4 @@ class TorVpnProxyFetcher(ConcreteProxyFetcher):
                   stdout=PIPE, input=resp.content, shell=True, check=True)
         # "_" is default for unrecognizable, this is always "7"
         ip = cmd.stdout.strip().decode().replace('_', '7')
-        yield Proxy(ip + port, types=types, country=country, success_at=success_at)
+        yield Proxy(ip + ':' + port, **kwargs)

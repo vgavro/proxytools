@@ -138,8 +138,12 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
         filtered = 0
         for count, proxy in enumerate(worker(*args, **kwargs)):
             assert isinstance(proxy, Proxy)
-            if proxy.success_at and isinstance(proxy.success_at, timedelta):
-                proxy.success_at = datetime.utcnow() - proxy.success_at
+
+            if isinstance(proxy.success_at, int):
+                proxy.success_at = now - timedelta(seconds=proxy.success_at)
+            elif isinstance(proxy.success_at, timedelta):
+                proxy.success_at = now - proxy.success_at
+
             if self.filter(proxy, now=now):
                 proxy.fetch_at = now
                 if proxy.success_at:
