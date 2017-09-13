@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 
 from .models import Proxy, HTTP_TYPES, AbstractProxyProcessor
+from .utils import get_response_speed
 
 
 logger = logging.getLogger(__name__)
@@ -31,9 +32,14 @@ class ProxyChecker(AbstractProxyProcessor):
         # Needed for some fetchers that not reporting that proxy supports https
         self.https_force_check = https_force_check
 
+        # To avoid parallel processing of same proxy from different fetchers
+        self._processing = []
+
     def __call__(self, *proxies, join=False):
         for proxy in proxies:
-            self.spawn(self.worker, proxy)
+            if proxy.addr not in self._processing and proxy.addr not in self.blacklist:
+                self._processing.append(proxy.addr)
+                self.spawn(self.worker, proxy)
         if join:
             self.workers.join()
 
@@ -44,7 +50,8 @@ class ProxyChecker(AbstractProxyProcessor):
 
     def worker(self, proxy):
         if proxy.addr in self.blacklist:
-            logging.debug('Check blacklisted: %s', proxy.addr)
+            # because blacklist may be changed after __call__
+            logging.debug('Check skipped: %s', proxy.addr)
             return
         # Creating session each time not to hit [Errno 24] Too many open files
         session = self.create_session()
@@ -68,14 +75,14 @@ class ProxyChecker(AbstractProxyProcessor):
         # TODO: maybe add logging that proxy is skipped?
         # don't make this an error? Сынк эбаут ит!
         assert success is not None, 'proxy not checked'
+        self._processing.remove(proxy.addr)
         self.process_proxy(proxy)
 
     def check(self, session, protocol, proxy):
         proxies = {'http': proxy.url, 'https': proxy.url}
         try:
-            strat_at = time.time()
+            start_at = time.time()
             resp = session.get(CHECK_URLS[protocol], proxies=proxies)
-            end_at = time.time()
             resp.raise_for_status()
             assert 'origin' in resp.json()
             # TODO: anonymity check for http
@@ -89,8 +96,7 @@ class ProxyChecker(AbstractProxyProcessor):
             proxy.success_at = datetime.utcnow()
             proxy.fail_at = None
             proxy.fail = 0
-            kb = int(resp.headers.get('Content-Length')) / 1024
-            proxy.speed = round(kb / (end_at - strat_at), 2)
+            proxy.speed = get_response_speed(resp, start_at)
             return True
         finally:
             session.close()

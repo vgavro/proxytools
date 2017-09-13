@@ -3,6 +3,7 @@ import json
 import enum
 import collections
 from datetime import datetime, date, time
+import time as time_
 from importlib import import_module
 
 
@@ -171,3 +172,14 @@ def get_subclasses_from_module(module, cls):
             # issubclass() arg 1 must be a class skip
             pass
     return rv
+
+
+def get_response_speed(resp, start_at):
+    # Returns total kb read in 1 second
+    # NOTE: this also depends on connection time for first request to proxy
+    # TODO: resp.elapsed is checking headers read besides content read,
+    # maybe it would be more clear to substract it,
+    # as total speed depends also on connection time
+    assert resp.content  # just check that content is read
+    kb = int(resp.headers.get('Content-Length')) / 1024
+    return round(kb / (time_.time() - start_at), 2)
