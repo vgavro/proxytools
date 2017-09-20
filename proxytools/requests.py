@@ -58,15 +58,17 @@ def _call_with_proxylist(obj, proxylist, func, *args, **kwargs):
     if kwargs.get('proxies'):
         raise ValueError('proxies argument is not empty, '
                          'but should be populated from proxylist')
-    proxy_max_retries = kwargs.pop('proxy_max_retries')
-    proxy_response_validator = kwargs.pop('proxy_response_validator')
-    proxy_preserve = kwargs.pop('proxy_preserve')
-    proxy_rest = kwargs.pop('proxy_rest')
+
+    proxy_max_retries = kwargs.pop('proxy_max_retries', PROXY_MAX_RETRIES_DEFAULT)
+    proxy_response_validator = kwargs.pop('proxy_response_validator', None)
+    proxy_preserve = kwargs.pop('proxy_preserve', False)
+    proxy_kwargs = {k[6:]: kwargs.pop(k) for k in tuple(kwargs.keys())
+                    if k.startswith('proxy_')}
 
     exclude = []
     for _ in range(proxy_max_retries):
         proxy = proxylist.get_fastest(exclude=exclude, preserve=obj._preserve_addr,
-                                      rest=proxy_rest)
+                                      **proxy_kwargs)
         kwargs['proxies'] = {'http': proxy.url, 'https': proxy.url}
         exc_ = None  # workaround for "smart" python3 variable clearing
         try:
@@ -108,21 +110,16 @@ class SharedProxyManagerHTTPAdapter(HTTPAdapter):
 
 
 class ProxyListHTTPAdapter(SharedProxyManagerHTTPAdapter):
-    def __init__(self, proxylist, proxy_max_retries=PROXY_MAX_RETRIES_DEFAULT,
-                 proxy_response_validator=None, proxy_preserve=False, proxy_rest=0, **kwargs):
+    def __init__(self, proxylist, **kwargs):
         self.proxylist = proxylist
-        self.proxy_max_retries = proxy_max_retries
-        self.proxy_response_validator = proxy_response_validator
-        self.proxy_preserve = proxy_preserve
-        self.proxy_rest = proxy_rest
         self._preserve_addr = None
+        self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs.keys())
+                             if k.startswith('proxy_')}
         super().__init__(proxylist.proxy_pool_manager, **kwargs)
 
     def send(self, *args, **kwargs):
-        kwargs.setdefault('proxy_max_retries', self.proxy_max_retries)
-        kwargs.setdefault('proxy_response_validator', self.proxy_response_validator)
-        kwargs.setdefault('proxy_preserve', self.proxy_preserve)
-        kwargs.setdefault('proxy_rest', self.proxy_rest)
+        for k, v in self.proxy_kwargs.items():
+            kwargs.setdefault(k, v)
         return _call_with_proxylist(self, self.proxylist, super().send, *args, **kwargs)
 
 
@@ -182,15 +179,11 @@ class ProxyListSession(RegexpMountSession, ConfigurableSession):
     # so total timeout would be proxy_max_retries * timeout
     timeout = TIMEOUT_DEFAULT
 
-    def __init__(self, proxylist, proxy_max_retries=PROXY_MAX_RETRIES_DEFAULT,
-                 proxy_response_validator=None, proxy_preserve=False,
-                 proxy_rest=0, **kwargs):
+    def __init__(self, proxylist, **kwargs):
         self.proxylist = proxylist
-        self.proxy_max_retries = proxy_max_retries
-        self.proxy_response_validator = proxy_response_validator
-        self.proxy_preserve = proxy_preserve
-        self.proxy_rest = proxy_rest
         self._preserve_addr = None
+        self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs.keys())
+                             if k.startswith('proxy_')}
 
         adapter = SharedProxyManagerHTTPAdapter(proxylist.proxy_pool_manager)
         kwargs['mount'] = {'http://': adapter, 'https://': adapter}
@@ -198,8 +191,6 @@ class ProxyListSession(RegexpMountSession, ConfigurableSession):
         super().__init__(**kwargs)
 
     def request(self, *args, **kwargs):
-        kwargs.setdefault('proxy_max_retries', self.proxy_max_retries)
-        kwargs.setdefault('proxy_response_validator', self.proxy_response_validator)
-        kwargs.setdefault('proxy_preserve', self.proxy_preserve)
-        kwargs.setdefault('proxy_rest', self.proxy_rest)
+        for k, v in self.proxy_kwargs.items():
+            kwargs.setdefault(k, v)
         return _call_with_proxylist(self, self.proxylist, super().request, *args, **kwargs)
