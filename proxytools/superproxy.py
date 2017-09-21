@@ -91,7 +91,9 @@ class WSGISuperProxy:
         resp = self.session.request(method, url, data=data, headers=headers, **kwargs)
         start_response(
             '{0.status_code} {0.reason}'.format(resp),
-            [(k, v) for k, v in resp.headers.items() if not is_hop_by_hop(k)] +
-            [('X-Superproxy-Addr', resp._proxy.addr)]
+            [(k, v) for k, v in resp.headers.items()
+             if not is_hop_by_hop(k) and k.lower() not in ('content-length',)] +
+            [('Content-Length', str(len(resp.content))),
+             ('X-Superproxy-Addr', resp._proxy.addr)]
         )
         yield resp.content
