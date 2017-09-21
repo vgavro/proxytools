@@ -94,4 +94,4 @@ class WSGISuperProxy:
             [(k, v) for k, v in resp.headers.items() if not is_hop_by_hop(k)] +
             [('X-Superproxy-Addr', resp._proxy.addr)]
         )
-        return resp.iter_content()
+        yield resp.content
