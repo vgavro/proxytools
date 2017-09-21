@@ -122,7 +122,7 @@ class ProxyList:
         proxy.in_use -= 1
         assert proxy.in_use >= 0
 
-    def get_ready_proxies(self, rest=None, exclude=[], proxy_countries=None):
+    def get_ready_proxies(self, rest=None, exclude=[], countries=None):
         now = datetime.utcnow()
         rest = self.rest if rest is None else rest
         return {
@@ -131,16 +131,19 @@ class ProxyList:
             if p.in_use < self.max_simultaneous and
             addr not in exclude and
             (now - p.success_at).total_seconds() > rest and
-            (not proxy_countries or p.country in proxy_countries)
+            (not countries or p.country in countries)
         }
 
-    def get(self, strategy, rest=None, exclude=[], preserve=None, wait=True, proxy_countries=None):
-        if isinstance(strategy, enum.Enum):
-            strategy = getattr(self, strategy.value)
+    def get(self, strategy, rest=None, exclude=[], preserve=None, wait=True, countries=None):
+        if not callable(strategy):
+            if isinstance(strategy, str):
+                strategy = getattr(self, GET_STRATEGY[strategy].value)
+            elif isinstance(strategy, enum.Enum):
+                strategy = getattr(self, strategy.value)
 
         self.maybe_update()
         while True:
-            ready_proxies = self.get_ready_proxies(rest, exclude, proxy_countries)
+            ready_proxies = self.get_ready_proxies(rest, exclude, countries)
             if ready_proxies:
                 break
             else:

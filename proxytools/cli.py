@@ -7,8 +7,6 @@ from click import command, option, echo, BadOptionUsage
 import coloredlogs
 import yaml
 
-from .proxyfetcher import ProxyFetcher
-from .proxychecker import ProxyChecker
 from .utils import dict_merge, JSONEncoder, CompositeContains, gevent_monkey_patch
 
 
@@ -110,6 +108,9 @@ def cli(*options):
 )
 def fetcher(config, show_list, fetchers, check, pool_size,
             https_only, http_check_https, no_socks, save):
+    from .proxyfetcher import ProxyFetcher
+    from .proxychecker import ProxyChecker
+
     if show_list:
         for fetcher in ProxyFetcher.registry.values():
             echo(fetcher.name +' '+ fetcher.__module__ + ':' + fetcher.__name__)
@@ -169,10 +170,26 @@ def fetcher(config, show_list, fetchers, check, pool_size,
     json_encoder.dump(proxies.values(), save or sys.stdout)
 
 
-@cli()
-def superproxy(config):
+@cli(
+    option('-l', '--listen', default=None),
+)
+def superproxy(config, listen):
     from gevent.pywsgi import WSGIServer
     from .superproxy import WSGISuperProxy
-    server = WSGIServer(('0.0.0.0', 8088), WSGISuperProxy(None))
-    print('serving')
+    from .proxychecker import ProxyChecker
+    from .proxyfetcher import ProxyFetcher
+    from .proxylist import ProxyList
+
+    conf = config.get('proxychecker', {})
+    checker = ProxyChecker(**conf)
+
+    conf = config.get('proxyfetcher', {})
+    fetcher = ProxyFetcher(checker=checker, **conf)
+
+    conf = config.get('superproxy', {})
+    proxylist = ProxyList(fetcher=fetcher, **conf.pop('proxylist', {}))
+    if not listen:
+        listen = conf.pop('listen', '0.0.0.0:8088')
+    iface, port = listen.split(':')
+    server = WSGIServer((iface, int(port)), WSGISuperProxy(proxylist))
     server.serve_forever()

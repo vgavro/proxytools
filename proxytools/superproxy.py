@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 HOP_BY_HOP_HEADERS = frozenset([
     'connection', 'keep-alive', 'proxy-authenticate',
     'proxy-authorization', 'te', 'trailers', 'transfer-encoding',
-    'upgrade', 'proxy-connection'
+    'upgrade', 'proxy-connection', 'content-encoding'
 ])
 
 
@@ -31,9 +31,11 @@ def reconstruct_url(environ):
 
 SUPERPROXY_HEADERS = {
     # decode, encode
-    'timeout': (int, str),
+    'timeout': (int, str),  # TODO: proxying only proxy_* kwargs
+    'proxy_strategy': (lambda x: str(x).upper(), lambda x: str(x).upper()),
     'proxy_max_retries': (int, str),
     'proxy_rest': (int, str),
+    'proxy_wait': (int, str),
     'proxy_preserve': (int, str),
     'proxy_countries': (lambda x: x.split(','), lambda x: ','.join(x)),
 }
@@ -41,9 +43,9 @@ SUPERPROXY_HEADERS = {
 
 class WSGISuperProxy:
     def __init__(self, proxylist, **session_kwargs):
-        from .requests import ProxyListSession, ForgetfulCookieJar
-        self.session = ProxyListSession(proxylist, **session_kwargs)
-        self.session.cookies = ForgetfulCookieJar()
+        from .requests import ProxyListSession
+        self.session = ProxyListSession(proxylist, forgetful_cookies=True,
+                                        **session_kwargs)
 
     def __call__(self, environ, start_response):
         # Allow simple proxy from PATH url

@@ -46,12 +46,13 @@ class ProxyChecker(AbstractProxyProcessor):
     def create_session(self):
         # Lazy import requests because of gevent.monkey_patch
         from .requests import ConfigurableSession, ForgetfulCookieJar
-        return ConfigurableSession(cookies=ForgetfulCookieJar(), timeout=self.timeout)
+        return ConfigurableSession(cookies=ForgetfulCookieJar(), allow_redirects=False,
+                                   timeout=self.timeout)
 
     def worker(self, proxy):
         if proxy.addr in self.blacklist:
             # because blacklist may be changed after __call__
-            logging.debug('Check skipped: %s', proxy.addr)
+            logger.debug('Check skipped: %s', proxy.addr)
             return
         # Creating session each time not to hit [Errno 24] Too many open files
         session = self.create_session()
@@ -87,12 +88,12 @@ class ProxyChecker(AbstractProxyProcessor):
             assert 'origin' in resp.json()
             # TODO: anonymity check for http
         except Exception as exc:
-            logging.debug('Check %s fail: %s: %s', protocol, proxy.addr, exc)
+            logger.debug('Check %s fail: %s: %s', protocol, proxy.addr, exc)
             proxy.fail_at = datetime.utcnow()
             proxy.fail += 1
             return False
         else:
-            logging.debug('Check %s success: %s', protocol, proxy.addr)
+            logger.debug('Check %s success: %s', protocol, proxy.addr)
             proxy.success_at = datetime.utcnow()
             proxy.fail_at = None
             proxy.fail = 0

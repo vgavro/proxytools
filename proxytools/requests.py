@@ -133,17 +133,18 @@ class ProxyListMixin:
         for k, v in self.proxy_kwargs.items():
             kwargs.setdefault(k, v)
 
-        proxy_max_retries = kwargs.pop('proxy_max_retries', PROXY_MAX_RETRIES_DEFAULT)
-        proxy_response_validator = kwargs.pop('proxy_response_validator', None)
-        proxy_preserve = kwargs.pop('proxy_preserve', False)
-        preserve = self._preserve_addr if proxy_preserve is True else proxy_preserve
+        strategy = kwargs.pop('proxy_strategy', self.proxylist._get_fastest)
+        max_retries = kwargs.pop('proxy_max_retries', PROXY_MAX_RETRIES_DEFAULT)
+        response_validator = kwargs.pop('proxy_response_validator', None)
+        preserve = kwargs.pop('proxy_preserve', False)
+        preserve_addr = self._preserve_addr if preserve is True else preserve
         proxy_kwargs = {k[6:]: kwargs.pop(k) for k in tuple(kwargs.keys())
                         if k.startswith('proxy_')}
 
         exclude = []
-        for _ in range(proxy_max_retries):
-            proxy = self.proxylist.get_fastest(exclude=exclude, preserve=preserve,
-                                               **proxy_kwargs)
+        for _ in range(max_retries):
+            proxy = self.proxylist.get(strategy, exclude=exclude, preserve=preserve_addr,
+                                       **proxy_kwargs)
             kwargs['proxies'] = {'http': proxy.url, 'https': proxy.url}
             exc_ = None  # workaround for "smart" python3 variable clearing
             try:
@@ -153,21 +154,21 @@ class ProxyListMixin:
                 exclude.append(proxy.addr)
                 exc_ = exc  # workaround for "smart" python3 variable clearing
             else:
-                if not proxy_response_validator or proxy_response_validator(resp):
+                if not response_validator or response_validator(resp):
                     self.proxylist.success(proxy)
-                    if proxy_preserve is True:
+                    if preserve is True:
                         self._preserve_addr = proxy.addr
                     # NOTE: maybe remove it, test purpose only (also used in superproxy)
                     resp._proxy = proxy
                     return resp
                 else:
                     self.proxylist.fail(proxy, resp=resp)
-                    if proxy_preserve:
+                    if preserve is True:
                         self._preserve_addr = None
                     exclude.append(proxy.addr)
         reason_repr = exc_ and repr(exc_) or repr_response(resp)
         raise ProxyMaxRetriesExceeded('Max retries exceeded: {} {}'
-                                      .format(proxy_max_retries, reason_repr))
+                                      .format(max_retries, reason_repr))
 
 
 class ProxyListHTTPAdapter(ProxyListMixin, SharedProxyManagerHTTPAdapter):
@@ -192,6 +193,10 @@ class ProxyListSession(ProxyListMixin, ConfigurableSession):
         super().__init__(proxylist, **kwargs)
 
     def request(self, *args, **kwargs):
+        # TODO: for now redirects are done without proxy,
+        # because it uses self.send method directly, and we
+        # can't easily pass proxy_kwargs there
+        kwargs['allow_redirects'] = False
         return self._proxylist_call(super().request, *args, **kwargs)
 
 
@@ -200,12 +205,17 @@ class SuperProxySession(ConfigurableSession):
         if not proxy.endswith('/'):
             proxy += '/'
         self.proxy = proxy
-        self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs.keys())
+        self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs)
                              if k.startswith('proxy_')}
         self._preserve_addr = None
         super().__init__(**kwargs)
 
     def request(self, method, url, headers={}, **kwargs):
+        # TODO: for now redirects are done without proxy,
+        # because it uses self.send method directly, and we
+        # can't easily pass proxy_kwargs there
+        kwargs['allow_redirects'] = False
+
         url = self.proxy + url
 
         for k, v in self.proxy_kwargs.items():
@@ -214,16 +224,15 @@ class SuperProxySession(ConfigurableSession):
         if preserve is True and self._preserve_addr:
             kwargs['proxy_preserve'] = self._preserve_addr
 
-        self._set_superproxy_headers(headers, {k[6:]: kwargs.pop(k) for k in tuple(kwargs)
-                                               if k.starswith('proxy_')})
+        proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs)
+                        if k.startswith('proxy_')}
+        for key, value in proxy_kwargs.items():
+            headers['X-Superproxy-' + key.replace('_', '-').title()] = \
+                SUPERPROXY_HEADERS[key][1](value)
 
         resp = super().request(method, url, headers=headers, **kwargs)
 
         if preserve:
-            self._preserve_addr = resp.headers['X-Superproxy-Proxy-Addr']
+            self._preserve_addr = resp.headers['X-Superproxy-Addr']
 
         return resp
-
-    def _set_superproxy_headers(self, headers, params):
-        for key, value in params.items():
-            headers['X-Superproxy-' + key] = SUPERPROXY_HEADERS[key][1](value)

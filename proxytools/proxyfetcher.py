@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class ProxyFetcher(AbstractProxyProcessor):
-    def __init__(self, fetchers, checker=None,
+    def __init__(self, fetchers='*', checker=None,
                  proxy=None, pool=None, pool_size=None, blacklist=None,
                  **kwargs):
         super().__init__(proxy, pool, pool_size)
@@ -23,6 +23,8 @@ class ProxyFetcher(AbstractProxyProcessor):
             # to set it also on checker
             self.checker.proxy = self.checked_proxy
 
+        if fetchers == '*':
+            fetchers = self.registry
         self.fetchers = []
         fetcher_kwargs = {name: kwargs.pop(name, {}) for name in self.registry}
         for fetcher in fetchers:
@@ -135,8 +137,7 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
         if not result:
             return
         now = datetime.utcnow()
-        filtered = 0
-        for count, proxy in enumerate(worker(*args, **kwargs)):
+        for proxy in worker(*args, **kwargs):
             assert isinstance(proxy, Proxy)
 
             if isinstance(proxy.success_at, int):
@@ -153,6 +154,4 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
                 self.logger.debug('Fetched: %s', proxy.addr)
                 self.process_proxy(proxy)
             else:
-                filtered += 1
                 self.logger.debug('Filtered: %s', proxy.addr)
-        self.logger.info('Fetched: %s, filtered: %s', count + 1 - filtered, filtered)
