@@ -49,7 +49,7 @@ class EntityLoggerAdapter(logging.LoggerAdapter):
         return '{}: {}'.format(self.entity, msg), kwargs
 
 
-def dict_merge(d, u, copy=False):
+def dict_merge(d, u):
     # https://stackoverflow.com/a/3233356/450103
     for k, v in u.items():
         if isinstance(v, collections.Mapping):

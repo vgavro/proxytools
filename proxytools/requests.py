@@ -6,6 +6,7 @@ from requests.adapters import HTTPAdapter
 from requests.sessions import Session
 
 from .proxylist import ProxyMaxRetriesExceeded
+from .superproxy import SUPERPROXY_HEADERS
 
 
 PROXY_MAX_RETRIES_DEFAULT = 3
@@ -54,49 +55,6 @@ class ResponseMatch:
         return True
 
 
-def _call_with_proxylist(obj, proxylist, func, *args, **kwargs):
-    if kwargs.get('proxies'):
-        raise ValueError('proxies argument is not empty, '
-                         'but should be populated from proxylist')
-
-    proxy_max_retries = kwargs.pop('proxy_max_retries', PROXY_MAX_RETRIES_DEFAULT)
-    proxy_response_validator = kwargs.pop('proxy_response_validator', None)
-    proxy_preserve = kwargs.pop('proxy_preserve', False)
-    proxy_kwargs = {k[6:]: kwargs.pop(k) for k in tuple(kwargs.keys())
-                    if k.startswith('proxy_')}
-
-    exclude = []
-    for _ in range(proxy_max_retries):
-        proxy = proxylist.get_fastest(exclude=exclude, preserve=obj._preserve_addr,
-                                      **proxy_kwargs)
-        kwargs['proxies'] = {'http': proxy.url, 'https': proxy.url}
-        exc_ = None  # workaround for "smart" python3 variable clearing
-        try:
-            resp = func(*args, **kwargs)
-            # TODO: clear self.proxy_manager dict to prevent overflow on many proxies?
-            # TODO: do not keep connections to proxy on initialization
-            # TODO: keep proxy_managers in proxy_list maybe? for connection caching?
-        except Exception as exc:
-            proxylist.fail(proxy, exc=exc)
-            exclude.append(proxy.addr)
-            exc_ = exc  # workaround for "smart" python3 variable clearing
-        else:
-            if not proxy_response_validator or proxy_response_validator(resp):
-                proxylist.success(proxy)
-                if proxy_preserve:
-                    obj._preserve_addr = proxy.addr
-                resp._proxy = proxy  # NOTE: maybe remove it, test purpose only
-                return resp
-            else:
-                proxylist.fail(proxy, resp=resp)
-                if proxy_preserve:
-                    obj._preserve_addr = None
-                exclude.append(proxy.addr)
-    reason_repr = exc_ and repr(exc_) or repr_response(resp)
-    raise ProxyMaxRetriesExceeded('Max retries exceeded: {} {}'
-                                  .format(proxy_max_retries, reason_repr))
-
-
 class ForgetfulCookieJar(RequestsCookieJar):
     # from https://github.com/requests/toolbelt/blob/master/requests_toolbelt/cookies/forgetful.py
     def set_cookie(self, *args, **kwargs):
@@ -107,20 +65,6 @@ class SharedProxyManagerHTTPAdapter(HTTPAdapter):
     def __init__(self, proxy_manager, **kwargs):
         super().__init__(**kwargs)
         self.proxy_manager = proxy_manager
-
-
-class ProxyListHTTPAdapter(SharedProxyManagerHTTPAdapter):
-    def __init__(self, proxylist, **kwargs):
-        self.proxylist = proxylist
-        self._preserve_addr = None
-        self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs.keys())
-                             if k.startswith('proxy_')}
-        super().__init__(proxylist.proxy_pool_manager, **kwargs)
-
-    def send(self, *args, **kwargs):
-        for k, v in self.proxy_kwargs.items():
-            kwargs.setdefault(k, v)
-        return _call_with_proxylist(self, self.proxylist, super().send, *args, **kwargs)
 
 
 class ConfigurableSession(Session):
@@ -173,24 +117,113 @@ class RegexpMountSession(Session):
         return super().get_adapter(url)
 
 
-class ProxyListSession(RegexpMountSession, ConfigurableSession):
+class ProxyListMixin:
+    def __init__(self, proxylist, **kwargs):
+        self.proxylist = proxylist
+        self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs.keys())
+                             if k.startswith('proxy_')}
+        self._preserve_addr = None
+        super().__init__(**kwargs)
+
+    def _proxylist_call(self, func, *args, **kwargs):
+        if kwargs.get('proxies'):
+            raise ValueError('proxies argument is not empty, '
+                             'but should be populated from proxylist')
+
+        for k, v in self.proxy_kwargs.items():
+            kwargs.setdefault(k, v)
+
+        proxy_max_retries = kwargs.pop('proxy_max_retries', PROXY_MAX_RETRIES_DEFAULT)
+        proxy_response_validator = kwargs.pop('proxy_response_validator', None)
+        proxy_preserve = kwargs.pop('proxy_preserve', False)
+        preserve = self._preserve_addr if proxy_preserve is True else proxy_preserve
+        proxy_kwargs = {k[6:]: kwargs.pop(k) for k in tuple(kwargs.keys())
+                        if k.startswith('proxy_')}
+
+        exclude = []
+        for _ in range(proxy_max_retries):
+            proxy = self.proxylist.get_fastest(exclude=exclude, preserve=preserve,
+                                               **proxy_kwargs)
+            kwargs['proxies'] = {'http': proxy.url, 'https': proxy.url}
+            exc_ = None  # workaround for "smart" python3 variable clearing
+            try:
+                resp = func(*args, **kwargs)
+            except Exception as exc:
+                self.proxylist.fail(proxy, exc=exc)
+                exclude.append(proxy.addr)
+                exc_ = exc  # workaround for "smart" python3 variable clearing
+            else:
+                if not proxy_response_validator or proxy_response_validator(resp):
+                    self.proxylist.success(proxy)
+                    if proxy_preserve is True:
+                        self._preserve_addr = proxy.addr
+                    # NOTE: maybe remove it, test purpose only (also used in superproxy)
+                    resp._proxy = proxy
+                    return resp
+                else:
+                    self.proxylist.fail(proxy, resp=resp)
+                    if proxy_preserve:
+                        self._preserve_addr = None
+                    exclude.append(proxy.addr)
+        reason_repr = exc_ and repr(exc_) or repr_response(resp)
+        raise ProxyMaxRetriesExceeded('Max retries exceeded: {} {}'
+                                      .format(proxy_max_retries, reason_repr))
+
+
+class ProxyListHTTPAdapter(ProxyListMixin, SharedProxyManagerHTTPAdapter):
+    def __init__(self, proxylist, **kwargs):
+        super().__init__(proxylist, proxy_manager=proxylist.proxy_pool_manager, **kwargs)
+
+    def send(self, *args, **kwargs):
+        return self._proxylist_call(super().send, *args, **kwargs)
+
+
+class ProxyListSession(ProxyListMixin, ConfigurableSession):
     # Never work with proxies without timeout!
     # NOTE: this timeout applies to each request,
     # so total timeout would be proxy_max_retries * timeout
     timeout = TIMEOUT_DEFAULT
 
-    def __init__(self, proxylist, **kwargs):
-        self.proxylist = proxylist
-        self._preserve_addr = None
-        self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs.keys())
-                             if k.startswith('proxy_')}
-
+    def __init__(self, proxylist, forgetful_cookies=False, **kwargs):
         adapter = SharedProxyManagerHTTPAdapter(proxylist.proxy_pool_manager)
         kwargs['mount'] = {'http://': adapter, 'https://': adapter}
-
-        super().__init__(**kwargs)
+        if forgetful_cookies:
+            kwargs['cookies'] = ForgetfulCookieJar()
+        super().__init__(proxylist, **kwargs)
 
     def request(self, *args, **kwargs):
+        return self._proxylist_call(super().request, *args, **kwargs)
+
+
+class SuperProxySession(ConfigurableSession):
+    def __init__(self, proxy, **kwargs):
+        if not proxy.endswith('/'):
+            proxy += '/'
+        self.proxy = proxy
+        self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs.keys())
+                             if k.startswith('proxy_')}
+        self._preserve_addr = None
+        super().__init__(**kwargs)
+
+    def request(self, method, url, headers={}, **kwargs):
+        url = self.proxy + url
+
         for k, v in self.proxy_kwargs.items():
             kwargs.setdefault(k, v)
-        return _call_with_proxylist(self, self.proxylist, super().request, *args, **kwargs)
+        preserve = kwargs.get('proxy_preserve', False)
+        if preserve is True and self._preserve_addr:
+            kwargs['proxy_preserve'] = self._preserve_addr
+
+        self._set_superproxy_headers(headers, {k[6:]: kwargs.pop(k) for k in tuple(kwargs)
+                                               if k.starswith('proxy_')})
+
+        resp = super().request(method, url, headers=headers, **kwargs)
+
+        if preserve:
+            self._preserve_addr = resp.headers['X-Superproxy-Proxy-Addr']
+
+        return resp
+
+    def _set_superproxy_headers(self, headers, params):
+        for key, value in params.items():
+            headers['X-Superproxy-' + key] = SUPERPROXY_HEADERS[key][1](value)

@@ -53,6 +53,7 @@ setup(
         'console_scripts': [
             'proxyfetcher=proxytools.cli:fetcher',
             'proxychecker=proxytools.cli:checker',
+            'superproxy=proxytools.cli:superproxy',
         ],
     },
 )

@@ -29,9 +29,9 @@ def configure_logging(config):
     if config.get('coloredlogs'):
         conf = config.pop('coloredlogs').copy()
         conf['field_styles'] = dict_merge(coloredlogs.DEFAULT_FIELD_STYLES,
-                                          conf.get('field_styles', {}), copy=True)
+                                          conf.get('field_styles', {}))
         conf['level_styles'] = dict_merge(coloredlogs.DEFAULT_LEVEL_STYLES,
-                                          conf.pop('level_styles', {}), copy=True)
+                                          conf.pop('level_styles', {}))
         coloredlogs.install(**conf)
     else:
         del config['coloredlogs']  # in case 'coloredlogs': null or {}
@@ -167,3 +167,12 @@ def fetcher(config, show_list, fetchers, check, pool_size,
     fetcher(join=True)
 
     json_encoder.dump(proxies.values(), save or sys.stdout)
+
+
+@cli()
+def superproxy(config):
+    from gevent.pywsgi import WSGIServer
+    from .superproxy import WSGISuperProxy
+    server = WSGIServer(('0.0.0.0', 8088), WSGISuperProxy(None))
+    print('serving')
+    server.serve_forever()
