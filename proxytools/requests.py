@@ -9,52 +9,11 @@ from requests.utils import select_proxy, urldefragauth
 
 from .proxylist import ProxyMaxRetriesExceeded
 from .superproxy import SUPERPROXY_HEADERS
+from .utils import repr_response
 
 
 PROXY_MAX_RETRIES_DEFAULT = 3
 TIMEOUT_DEFAULT = 10
-
-
-def repr_response(resp, full=False):
-    if not full and len(resp.content) > 128:
-        content = '{}...{}b'.format(resp.content[:128], len(resp.content))
-    else:
-        content = resp.response.content
-    return '{} {} {}: {}'.format(resp.request.method, resp.status_code,
-                                 resp.url, content)
-
-
-class ResponseMatch:
-    """
-    Helper class to be used instead callback to match response.
-    For proxy_response_validator for example.
-    """
-    def __init__(self, status=None, content=None, header=None):
-        if content and not isinstance(content, (tuple, list)):
-            content = [content]
-        if status and not isinstance(status, (tuple, list)):
-            status = [status]
-        if header:
-            if not isinstance(header, (tuple, list)):
-                header = ((header, None),)
-            elif len(header) == 2 and not isinstance(header[0], (tuple, list)):
-                header = (header,)
-        self.status, self.content, self.header = status, content, header
-
-    def __call__(self, resp):
-        if self.content and not any(x in resp.content for x in self.content):
-            return False
-        if self.status and resp.status_code not in self.status:
-            return False
-        if self.header:
-            matched = False
-            for header, content in self.header:
-                has_header = header in resp.headers
-                matched = ((has_header and not content) or
-                           (has_header and content and content in resp.headers[header]))
-            if not matched:
-                return False
-        return True
 
 
 class ForgetfulCookieJar(RequestsCookieJar):
@@ -64,12 +23,21 @@ class ForgetfulCookieJar(RequestsCookieJar):
 
 
 class SharedProxyManagerHTTPAdapter(HTTPAdapter):
+    """
+    ProxyManager holds connection pool, so if we're using different sessions,
+    which connects to same proxies, it's useful to share proxy managers between sessions.
+    """
     def __init__(self, proxy_manager, **kwargs):
         super().__init__(**kwargs)
         self.proxy_manager = proxy_manager
 
 
 class ConfigurableSession(Session):
+    """
+    Helper class that allows to pass some parameters to __init__
+    instead of settings them later.
+    Also allows to set default timeout for each session request.
+    """
     def __init__(self, **kwargs):
         super().__init__()
 
@@ -97,6 +65,11 @@ class ConfigurableSession(Session):
 
 
 class RegexpMountSession(Session):
+    """
+    Allows to mount HTTPAdapter by regular expression.
+    Useful if you want to mount custom HTTPAdapter (for example ProxyListHTTPAdapter)
+    only to specific urls, but you haven't proper url hierarchy.
+    """
     def __init__(self, regexp_adapters={}, **kwargs):
         self.regexp_adapters = OrderedDict()
         for pattern, adapter in regexp_adapters.items():
@@ -174,6 +147,11 @@ class ProxyListMixin:
 
 
 class ProxyListHTTPAdapter(ProxyListMixin, SharedProxyManagerHTTPAdapter):
+    """
+    Adapter that is using proxies from ProxyList.
+    Useful if you want only specific urls to serve through proxies,
+    and other urls you want to serve directly.
+    """
     def __init__(self, proxylist, **kwargs):
         super().__init__(proxylist, proxy_manager=proxylist.proxy_pool_manager, **kwargs)
 
@@ -182,6 +160,9 @@ class ProxyListHTTPAdapter(ProxyListMixin, SharedProxyManagerHTTPAdapter):
 
 
 class ProxyListSession(ProxyListMixin, ConfigurableSession):
+    """
+    Session that is using proxies from ProxyList.
+    """
     # Never work with proxies without timeout!
     # NOTE: this timeout applies to each request,
     # so total timeout would be proxy_max_retries * timeout
@@ -203,13 +184,26 @@ class ProxyListSession(ProxyListMixin, ConfigurableSession):
 
 
 class SuperProxySession(ConfigurableSession):
-    def __init__(self, proxy, **kwargs):
+    """
+    Session that is using SuperProxy daemon as proxy.
+    Accepts arguments same as ProxyListSession and transfer
+    parameters as X-Superproxy-* headers.
+    NOTE: We're connecting to SuperProxy as plain proxy,
+    even with https urls, this allows to validate responses on SuperProxy
+    and transfer required X-Superproxy-* headers.
+    Responses validation is highly recommended, as proxies may return
+    "NOT WORKING" with 200 status for example, and we must fail
+    such proxies and add them to blacklist.
+    """
+    timeout = TIMEOUT_DEFAULT * PROXY_MAX_RETRIES_DEFAULT
+
+    def __init__(self, superproxy_url, **kwargs):
         self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs)
                              if k.startswith('proxy_')}
         self._preserve_addr = None
         adapter = SimpleHTTPSProxyManagerHTTPAdapter()
         kwargs['mount'] = {'http://': adapter, 'https://': adapter}
-        kwargs['proxies'] = {'http': proxy, 'https': proxy}
+        kwargs['proxies'] = {'http': superproxy_url, 'https': superproxy_url}
         super().__init__(**kwargs)
 
     def request(self, method, url, headers={}, **kwargs):

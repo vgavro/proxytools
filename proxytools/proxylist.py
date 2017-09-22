@@ -10,7 +10,7 @@ from gevent.lock import Semaphore
 from gevent.thread import get_ident
 
 from .models import Proxy
-from .utils import CompositeContains
+from .utils import CompositeContains, repr_response
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +97,13 @@ class ProxyList:
             self.next_proxy_lock.release()
 
     def fail(self, proxy, exc=None, resp=None):
+        if exc:
+            reason = ' exception: {!r}'.format(exc)
+        elif resp:
+            reason = ' response not matched: {}'.format(repr_response(resp))
+        else:
+            reason = ''
+        logger.debug('Failed: %s%s %s', proxy.addr, reason, self._stats_str)
         proxy.fail_at = datetime.utcnow()
         proxy.fail += 1
         proxy.in_use -= 1

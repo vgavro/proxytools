@@ -1,5 +1,7 @@
 import logging
 
+from .utils import ResponseValidator
+
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,8 @@ SUPERPROXY_HEADERS = {
     'proxy_wait': (int, str),
     'proxy_preserve': (int, str),
     'proxy_countries': (lambda x: x.split(','), lambda x: ','.join(x)),
+    'proxy_response_validator': (ResponseValidator._from_superproxy_header,
+                                 lambda x: x._to_superproxy_header()),
 }
 
 

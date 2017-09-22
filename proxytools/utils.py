@@ -4,7 +4,62 @@ import enum
 import collections
 from datetime import datetime, date, time
 import time as time_
+from urllib.parse import quote, unquote
 from importlib import import_module
+
+
+def repr_response(resp, full=False):
+    """
+    Helper function requests.Response representation.
+    """
+    if not full and len(resp.content) > 128:
+        content = '{}...{}b'.format(resp.content[:128], len(resp.content))
+    else:
+        content = resp.response.content
+    if 300 <= resp.status_code < 400:
+        content = resp.headers.get('Location')
+    return '{} {} {}: {}'.format(resp.request.method, resp.status_code,
+                                 resp.url, content)
+
+
+class ResponseValidator:
+    """
+    Helper class to be used instead callback to match requests.Response object for
+    proxy_response_validator param, also should be used with SuperProxySession.
+    """
+    def __init__(self, status=[], status_not=[], text=[], text_not=[],
+                 header=[], header_not=[]):
+        status, status_not = [int(x) for x in status], [int(x) for x in status_not]
+        (self.status, self.status_not, self.text, self.text_not,
+         self.header, self.header_not) = \
+            (status, status_not, text, text_not, header, header_not)
+
+    def __call__(self, resp):
+        if self.status and resp.status_code not in self.status:
+            return False
+        if resp.status_code in self.status_not:
+            return False
+        if self.text and not any(x in resp.text for x in self.text):
+            return False
+        if any(x in resp.text for x in self.text_not):
+            return False
+        for header, *header_text in self.header:
+            if header not in resp.headers:
+                return False
+            elif header_text and not header_text[0] in resp.headers[header]:
+                return False
+        for header, *header_text in self.header_not:
+            if header in resp.headers:
+                if not header_text or header_text[0] in resp.headers[header]:
+                    return False
+        return True
+
+    def _to_superproxy_header(self):
+        return quote(json.dumps({k: v for k, v in self.__dict__.items() if v}))
+
+    @classmethod
+    def _from_superproxy_header(self, data):
+        return ResponseValidator(**json.loads(unquote(data)))
 
 
 def create_country_name_to_alpha2():
