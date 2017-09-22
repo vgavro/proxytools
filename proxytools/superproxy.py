@@ -1,5 +1,4 @@
 import logging
-from urllib.parse import urlparse
 
 
 logger = logging.getLogger(__name__)
@@ -48,12 +47,6 @@ class WSGISuperProxy:
                                         **session_kwargs)
 
     def __call__(self, environ, start_response):
-        # Allow simple proxy from PATH url
-        path = environ['PATH_INFO']
-        if path.startswith('/http://') or path.startswith('/https://'):
-            environ['PATH_INFO'] = path[1:]
-            environ['HTTP_HOST'] = urlparse(path[1:]).hostname
-
         method = environ['REQUEST_METHOD']
         url = reconstruct_url(environ)
 

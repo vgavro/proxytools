@@ -1,9 +1,11 @@
 import re
 from collections import OrderedDict
 
+from urllib3.poolmanager import ProxyManager
 from requests.cookies import RequestsCookieJar
 from requests.adapters import HTTPAdapter
 from requests.sessions import Session
+from requests.utils import select_proxy, urldefragauth
 
 from .proxylist import ProxyMaxRetriesExceeded
 from .superproxy import SUPERPROXY_HEADERS
@@ -202,12 +204,12 @@ class ProxyListSession(ProxyListMixin, ConfigurableSession):
 
 class SuperProxySession(ConfigurableSession):
     def __init__(self, proxy, **kwargs):
-        if not proxy.endswith('/'):
-            proxy += '/'
-        self.proxy = proxy
         self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs)
                              if k.startswith('proxy_')}
         self._preserve_addr = None
+        adapter = SimpleHTTPSProxyManagerHTTPAdapter()
+        kwargs['mount'] = {'http://': adapter, 'https://': adapter}
+        kwargs['proxies'] = {'http': proxy, 'https': proxy}
         super().__init__(**kwargs)
 
     def request(self, method, url, headers={}, **kwargs):
@@ -215,8 +217,6 @@ class SuperProxySession(ConfigurableSession):
         # because it uses self.send method directly, and we
         # can't easily pass proxy_kwargs there
         kwargs['allow_redirects'] = False
-
-        url = self.proxy + url
 
         for k, v in self.proxy_kwargs.items():
             kwargs.setdefault(k, v)
@@ -236,3 +236,43 @@ class SuperProxySession(ConfigurableSession):
             self._preserve_addr = resp.headers['X-Superproxy-Addr']
 
         return resp
+
+
+class SimpleHTTPSProxyManager(ProxyManager):
+    """
+    Proxy manager that is NOT USING "CONNECT" for https urls.
+    """
+    def connection_from_host(self, host, port=None, scheme='http', pool_kwargs=None):
+        return super(ProxyManager, self).connection_from_host(
+            self.proxy.host, self.proxy.port, self.proxy.scheme, pool_kwargs=pool_kwargs)
+
+    def urlopen(self, method, url, redirect=True, **kw):
+        # Seems requests is not using urlopen method anyway
+        headers = kw.get('headers', self.headers)
+        kw['headers'] = self._set_proxy_headers(url, headers)
+        return super(ProxyManager, self).urlopen(method, url, redirect=redirect, **kw)
+
+
+class SimpleHTTPSProxyManagerHTTPAdapter(HTTPAdapter):
+    """
+    HTTP adapter that is NOT USING "CONNECT" for https urls.
+    """
+    def proxy_manager_for(self, proxy, **proxy_kwargs):
+        if (proxy not in self.proxy_manager and
+           not proxy.lower().startswith('socks')):
+            manager = self.proxy_manager[proxy] = SimpleHTTPSProxyManager(
+                proxy,
+                proxy_headers=self.proxy_headers(proxy),
+                num_pools=self._pool_connections,
+                maxsize=self._pool_maxsize,
+                block=self._pool_block,
+                **proxy_kwargs)
+            return manager
+        return super().proxy_manager_for(proxy, **proxy_kwargs)
+
+    def request_url(self, request, proxies):
+        proxy = select_proxy(request.url, proxies)
+        if (not proxy.lower().startswith('socks') and
+           request.url.lower().startswith('https://')):
+            return urldefragauth(request.url)
+        return super().request_url(request, proxies)
