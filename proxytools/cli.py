@@ -177,8 +177,8 @@ def superproxy(config, listen):
     import signal
     import sys
     # for graceful shutdown with saving proxies on atexit
-    signal.signal(signal.SIGTERM, sys.exit)
-    signal.signal(signal.SIGQUIT, sys.exit)
+    signal.signal(signal.SIGTERM, lambda *args: sys.exit(0))
+    signal.signal(signal.SIGQUIT, lambda *args: sys.exit(0))
 
     from gevent.pywsgi import WSGIServer
     from .superproxy import WSGISuperProxy
