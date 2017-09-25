@@ -89,7 +89,7 @@ class WSGISuperProxy:
             resp = self.session.request(method, url, data=data, headers=headers, **kwargs)
         except Exception as exc:
             logger.error('%r', exc)
-            start_response('500 Internal Server Error')
+            start_response('500 Internal Server Error', [])
             yield repr(exc)
             return
 
