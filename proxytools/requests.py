@@ -214,7 +214,7 @@ class SuperProxySession(ConfigurableSession):
 
         for k, v in self.proxy_kwargs.items():
             kwargs.setdefault(k, v)
-        preserve = kwargs.get('proxy_preserve', False)
+        preserve = kwargs.pop('proxy_preserve', False)
         if preserve is True and self._preserve_addr:
             kwargs['proxy_preserve'] = self._preserve_addr
 
@@ -227,7 +227,7 @@ class SuperProxySession(ConfigurableSession):
         resp = super().request(method, url, headers=headers, **kwargs)
 
         if preserve:
-            self._preserve_addr = resp.headers['X-Superproxy-Addr']
+            self._preserve_addr = resp.headers.get('X-Superproxy-Addr')
 
         return resp
 
