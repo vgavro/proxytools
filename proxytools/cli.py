@@ -174,6 +174,12 @@ def fetcher(config, show_list, fetchers, check, pool_size,
     option('-l', '--listen', default=None),
 )
 def superproxy(config, listen):
+    import signal
+    import sys
+    # for graceful shutdown with saving proxies on atexit
+    signal.signal(signal.SIGTERM, sys.exit)
+    signal.signal(signal.SIGQUIT, sys.exit)
+
     from gevent.pywsgi import WSGIServer
     from .superproxy import WSGISuperProxy
     from .proxychecker import ProxyChecker
@@ -188,6 +194,7 @@ def superproxy(config, listen):
 
     conf = config.get('superproxy', {})
     proxylist = ProxyList(fetcher=fetcher, **conf.pop('proxylist', {}))
+
     if not listen:
         listen = conf.pop('listen', '0.0.0.0:8088')
     iface, port = listen.split(':')
