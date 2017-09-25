@@ -37,7 +37,7 @@ SUPERPROXY_HEADERS = {
     'proxy_max_retries': (int, str),
     'proxy_rest': (int, str),
     'proxy_wait': (int, str),
-    'proxy_preserve': (int, str),
+    'proxy_preserve': (str, str),
     'proxy_countries': (lambda x: x.split(','), lambda x: ','.join(x)),
     'proxy_response_validator': (ResponseValidator._from_superproxy_header,
                                  lambda x: x._to_superproxy_header()),
