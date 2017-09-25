@@ -85,7 +85,14 @@ class WSGISuperProxy:
             if key in SUPERPROXY_HEADERS
         }
 
-        resp = self.session.request(method, url, data=data, headers=headers, **kwargs)
+        try:
+            resp = self.session.request(method, url, data=data, headers=headers, **kwargs)
+        except Exception as exc:
+            logger.error('%r', exc)
+            start_response('500 Internal Server Error')
+            yield repr(exc)
+            return
+
         headers = []
         # http://docs.python-requests.org/en/master/user/quickstart/#response-headers
         for k in resp.headers:
