@@ -5,6 +5,7 @@ import enum
 import json
 import os.path
 import atexit
+import signal
 
 from gevent.lock import Semaphore
 from gevent.thread import get_ident
@@ -49,7 +50,11 @@ class ProxyList:
             if atexit_save is True:
                 assert filename
                 atexit_save = filename
-            atexit.register(self.save, atexit_save)
+
+            def atexit_handler(*args, **kwargs):
+                self.save(atexit_save)
+            atexit.register(atexit_handler)
+            signal.signal(signal.SIGTERM, atexit_handler)
 
         if fetcher:
             fetcher.proxy = self.proxy
@@ -218,5 +223,6 @@ class ProxyList:
         data = {}
         for key in ('active_proxies', 'blacklist_proxies'):
             data[key] = tuple(p.to_json() for p in getattr(self, key).values())
+        logger.info('Saving proxies status %s %s', filename, self._stats_str)
         with open(filename, 'w') as fh:
             json.dump(data, fh)
