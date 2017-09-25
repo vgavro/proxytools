@@ -7,7 +7,7 @@ import os.path
 import atexit
 import signal
 
-from gevent.lock import Semaphore
+from gevent.event import Event
 from gevent.thread import get_ident
 
 from .models import Proxy
@@ -40,7 +40,9 @@ class ProxyList:
         self.max_simultaneous = max_simultaneous
         self.rest = 0  # timeout for proxy to rest after success
 
-        self.next_proxy_lock = Semaphore()
+        # Event is set each time proxy is added or released
+        self.proxy_avail = Event()
+
         self.active_proxies = {}
         self.blacklist_proxies = {}
 
@@ -99,7 +101,7 @@ class ProxyList:
 
         else:
             self.active_proxies[proxy.addr] = proxy
-            self.next_proxy_lock.release()
+            self.proxy_avail.set()
 
     def fail(self, proxy, exc=None, resp=None):
         if exc:
@@ -116,6 +118,8 @@ class ProxyList:
         if proxy.addr in self.active_proxies:
             if proxy.fail >= self.max_fail:
                 self.blacklist(proxy)
+            else:
+                self.proxy_avail.set()
 
     def blacklist(self, proxy):
         if proxy.addr in self.active_proxies:
@@ -133,6 +137,7 @@ class ProxyList:
         proxy.fail = 0
         proxy.in_use -= 1
         assert proxy.in_use >= 0
+        self.proxy_avail.set()
 
     def get_ready_proxies(self, rest=None, exclude=[], countries=None):
         now = datetime.utcnow()
@@ -165,8 +170,8 @@ class ProxyList:
                 elif wait:
                     logger.info('Wait proxy (thread %s) %s', get_ident(),
                                 self._stats_str)
-                    self.next_proxy_lock.acquire(blocking=False)
-                    self.next_proxy_lock.wait(None if wait is True else wait)
+                    self.proxy_avail.clear()
+                    self.proxy_avail.wait(None if wait is True else wait)
                 else:
                     break
 
@@ -218,6 +223,7 @@ class ProxyList:
         else:
             for proxy in data:
                 self.add(Proxy.from_json(proxy))
+        logger.info('Loaded proxies status %s %s', filename, self._stats_str)
 
     def save(self, filename):
         data = {}
