@@ -160,17 +160,13 @@ class ProxyList:
             ready_proxies = self.get_ready_proxies(rest, exclude, countries)
             if ready_proxies:
                 break
+            elif (not self.fetcher or self.fetcher.ready) and (wait is False or wait == -1):
+                raise InsufficientProxiesError('Insufficient proxies {}'
+                                               .format(self._stats_str))
             else:
-                if not self.fetcher or self.fetcher.ready:
-                    raise InsufficientProxiesError('Insufficient proxies {}'
-                                                   .format(self._stats_str))
-                elif wait:
-                    logger.info('Wait proxy (thread %s) %s', get_ident(),
-                                self._stats_str)
-                    self.proxy_avail.clear()
-                    self.proxy_avail.wait(None if wait is True else wait)
-                else:
-                    break
+                logger.info('Wait proxy (thread %s) %s', get_ident(), self._stats_str)
+                self.proxy_avail.clear()
+                self.proxy_avail.wait(None if wait is True else wait)
 
         if preserve:
             preserve = ready_proxies.get(preserve, None)
