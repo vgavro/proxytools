@@ -86,10 +86,16 @@ class WSGISuperProxy:
         }
 
         resp = self.session.request(method, url, data=data, headers=headers, **kwargs)
+        headers = []
+        # http://docs.python-requests.org/en/master/user/quickstart/#response-headers
+        for k in resp.headers:
+            if not is_hop_by_hop(k) and k.lower() not in ('content-length',):
+                for v in resp.raw.headers.getheaders(k):
+                    # Requests merge same header (set-cookie for example), see link above
+                    headers.append((k, v))
         start_response(
             '{0.status_code} {0.reason}'.format(resp),
-            [(k, v) for k, v in resp.headers.items()
-             if not is_hop_by_hop(k) and k.lower() not in ('content-length',)] +
+            headers +
             [('Content-Length', str(len(resp.content))),
              ('X-Superproxy-Addr', resp._proxy.addr)]
         )

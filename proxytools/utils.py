@@ -58,8 +58,8 @@ class ResponseValidator:
         return quote(json.dumps({k: v for k, v in self.__dict__.items() if v}))
 
     @classmethod
-    def _from_superproxy_header(self, data):
-        return ResponseValidator(**json.loads(unquote(data)))
+    def _from_superproxy_header(cls, data):
+        return cls(**json.loads(unquote(data)))
 
 
 def create_country_name_to_alpha2():
