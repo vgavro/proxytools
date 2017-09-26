@@ -1,6 +1,8 @@
 import logging
 from datetime import datetime, timedelta
 
+from gevent import Timeout
+
 from .models import Proxy, AbstractProxyProcessor
 from .proxychecker import ProxyChecker
 from .utils import EntityLoggerAdapter, classproperty, str_to_enum, import_string
@@ -142,21 +144,30 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
         if not result:
             return
         now = datetime.utcnow()
-        for proxy in worker(*args, **kwargs):
-            assert isinstance(proxy, Proxy)
+        fetched, filtered = 0, 0
+        try:
+            for proxy in result:
+                assert isinstance(proxy, Proxy)
 
-            if isinstance(proxy.success_at, int):
-                proxy.success_at = now - timedelta(seconds=proxy.success_at)
-            elif isinstance(proxy.success_at, timedelta):
-                proxy.success_at = now - proxy.success_at
+                if isinstance(proxy.success_at, int):
+                    proxy.success_at = now - timedelta(seconds=proxy.success_at)
+                elif isinstance(proxy.success_at, timedelta):
+                    proxy.success_at = now - proxy.success_at
 
-            if self.filter(proxy, now=now):
-                proxy.fetch_at = now
-                if proxy.success_at:
-                    assert now >= proxy.success_at, ('Proxy success_at in future: {}'
-                                                     .format(proxy))
-                proxy.fetch_sources.add(self.name)
-                self.logger.debug('Fetched: %s', proxy.addr)
-                self.process_proxy(proxy)
-            else:
-                self.logger.debug('Filtered: %s', proxy.addr)
+                if self.filter(proxy, now=now):
+                    proxy.fetch_at = now
+                    if proxy.success_at:
+                        assert now >= proxy.success_at, ('Proxy success_at in future: {}'
+                                                         .format(proxy))
+                    proxy.fetch_sources.add(self.name)
+                    fetched += 1
+                    # self.logger.debug('Fetched: %s', proxy.addr)
+                    self.process_proxy(proxy)
+                else:
+                    filtered += 1
+                    # self.logger.debug('Filtered: %s', proxy.addr)
+            # TODO: add event on fetch finish,
+            # maybe set this loglevel as debug and info on finish
+            self.logger.info('Fetched: %d (filtered %d)', fetched, filtered)
+        except (Exception, Timeout) as exc:
+            self.logger.exception('Fetch error: %r', exc)
