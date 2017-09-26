@@ -6,10 +6,12 @@ import json
 import os.path
 import atexit
 
+from gevent import GreenletExit, Timeout, sleep
 from gevent.event import Event
 from gevent.thread import get_ident
 
 from .models import Proxy
+from .proxyfetcher import ProxyFetcher
 from .utils import CompositeContains, repr_response
 
 logger = logging.getLogger(__name__)
@@ -33,7 +35,6 @@ class ProxyList:
                  rest=0, filename=None, atexit_save=False):
         if min_size <= 0:
             raise ValueError('min_size must be positive')
-        self.fetcher = fetcher
         self.min_size = min_size
         self.max_fail = max_fail
         self.max_simultaneous = max_simultaneous
@@ -44,6 +45,19 @@ class ProxyList:
 
         self.active_proxies = {}
         self.blacklist_proxies = {}
+        self.waiting = {}
+
+        # Dictionary to use shared connection pools between sessions
+        self.proxy_pool_manager = {}
+
+        if isinstance(fetcher, dict):
+            fetcher = ProxyFetcher(proxylist=self, **fetcher)
+        if fetcher:
+            fetcher.proxy = self.proxy
+            if fetcher.checker:
+                fetcher.blacklist = CompositeContains(self.active_proxies,
+                                                      self.blacklist_proxies)
+        self.fetcher = fetcher
 
         if filename and os.path.exists(filename):
             self.load(filename)
@@ -55,18 +69,9 @@ class ProxyList:
             atexit.register(self.save, atexit_save)
         self.atexit_save = atexit_save
 
-        if fetcher:
-            fetcher.proxy = self.proxy
-            if fetcher.checker:
-                fetcher.blacklist = CompositeContains(self.active_proxies,
-                                                      self.blacklist_proxies)
-
-        # Dictionary to use shared connection pools between sessions
-        self.proxy_pool_manager = {}
-
-        if self.need_update and self.fetcher and self.fetcher.ready:
+        if self.need_update and fetcher and fetcher.ready:
             logger.info('Start fetch %s', self._stats_str)
-            self.fetcher()
+            fetcher()
 
     @property
     def need_update(self):
@@ -74,9 +79,10 @@ class ProxyList:
 
     @property
     def _stats_str(self):
-        return ('(active:{} blacklist:{} fetcher:{})'
+        return ('(active:{} blacklist:{} wait:{} fetch:{})'
                 .format(len(self.active_proxies), len(self.blacklist_proxies),
-                        self.fetcher.ready and 'ready' or 'working'))
+                        len(self.waiting), not self.fetcher and 'no' or
+                        (self.fetcher.ready and 'ready' or 'working')))
 
     def maybe_update(self):
         if not len(self.active_proxies) and not self.fetcher:
@@ -117,6 +123,7 @@ class ProxyList:
                 self.blacklist(proxy)
             else:
                 self.proxy_avail.set()
+                sleep(0)  # switch to other greenlet for fair play
 
     def blacklist(self, proxy):
         if proxy.addr in self.active_proxies:
@@ -135,6 +142,7 @@ class ProxyList:
         proxy.in_use -= 1
         assert proxy.in_use >= 0
         self.proxy_avail.set()
+        sleep(0)  # switch to other greenlet for fair play
 
     def get_ready_proxies(self, rest=None, exclude=[], countries=None):
         now = datetime.utcnow()
@@ -156,17 +164,31 @@ class ProxyList:
                 strategy = getattr(self, strategy.value)
 
         self.maybe_update()
+
+        ident = get_ident()
         while True:
             ready_proxies = self.get_ready_proxies(rest, exclude, countries)
             if ready_proxies:
                 break
-            elif (not self.fetcher or self.fetcher.ready) and (wait is False or wait == -1):
+            elif wait is False or not self.fetcher or self.fetcher.ready:
                 raise InsufficientProxiesError('Insufficient proxies {}'
                                                .format(self._stats_str))
             else:
-                logger.info('Wait proxy (thread %s) %s', get_ident(), self._stats_str)
+                # logger.info('Wait proxy (thread %s) %s', ident, self._stats_str)
                 self.proxy_avail.clear()
-                self.proxy_avail.wait(None if wait is True else wait)
+                if ident not in self.waiting:
+                    #TODO: maybe more stats here
+                    self.waiting[ident] = datetime.utcnow()
+                elif (wait is not True and wait is not None and
+                     (datetime.utcnow() - self.waiting[ident]).total_seconds() > wait):
+                    del self.waiting[ident]
+                    raise Timeout(wait)
+                try:
+                    self.proxy_avail.wait(None if wait is True else wait)
+                except (Timeout, GreenletExit):
+                    del self.waiting[ident]
+        if ident in self.waiting:
+            del self.waiting[ident]
 
         if preserve:
             preserve = ready_proxies.get(preserve, None)

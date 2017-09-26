@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from collections import OrderedDict
 
 from urllib3.poolmanager import ProxyManager
@@ -6,10 +7,11 @@ from requests.cookies import RequestsCookieJar
 from requests.adapters import HTTPAdapter
 from requests.sessions import Session
 from requests.utils import select_proxy, urldefragauth
+from gevent import Timeout, sleep
 
-from .proxylist import ProxyMaxRetriesExceeded
+from .proxylist import ProxyMaxRetriesExceeded, InsufficientProxiesError
 from .superproxy import SUPERPROXY_HEADERS
-from .utils import repr_response
+from .utils import repr_response, get_random_user_agent
 
 
 PROXY_MAX_RETRIES_DEFAULT = 3
@@ -36,9 +38,12 @@ class ConfigurableSession(Session):
     """
     Helper class that allows to pass some parameters to __init__
     instead of settings them later.
-    Also allows to set default timeout for each session request.
+    Extends with request_wait, forgetful_cookies and random_user_agent params.
+    Allows to set default timeout for each request and
+    override allow_redirects.
     """
-    def __init__(self, **kwargs):
+    def __init__(self, request_wait=0, forgetful_cookies=False,
+                 random_user_agent=False, **kwargs):
         super().__init__()
 
         # to specify ordering this may be OrderedDict
@@ -58,10 +63,28 @@ class ConfigurableSession(Session):
             else:
                 raise TypeError('Unknown keyword argument: %s', k)
 
+        self.request_wait = request_wait
+        self.request_at = None
+
+        if forgetful_cookies:
+            assert 'cookies' not in kwargs
+            self.cookies = ForgetfulCookieJar()
+
+        if random_user_agent:
+            self.headers['User-Agent'] = get_random_user_agent(random_user_agent)
+
     def request(self, *args, **kwargs):
         kwargs.setdefault('timeout', getattr(self, 'timeout', None))
-        kwargs.setdefault('allow_redirects', getattr(self, 'allow_redirects', True))
-        return super().request(*args, **kwargs)
+        if hasattr(self, 'allow_redirects'):
+            kwargs['allow_redirects'] = self.allow_redirects
+        if self.request_wait and self.request_at:
+            delta = (datetime.utcnow() - self.request_at).total_seconds()
+            if 0 < delta < self.request_wait:
+                sleep(self.request_wait - delta)
+        try:
+            return super().request(*args, **kwargs)
+        finally:
+            self.request_at = datetime.utcnow()
 
 
 class RegexpMountSession(Session):
@@ -93,8 +116,9 @@ class RegexpMountSession(Session):
 
 
 class ProxyListMixin:
-    def __init__(self, proxylist, **kwargs):
+    def __init__(self, proxylist, allow_no_proxy=False, **kwargs):
         self.proxylist = proxylist
+        self.allow_no_proxy = allow_no_proxy
         self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs.keys())
                              if k.startswith('proxy_')}
         self._preserve_addr = None
@@ -115,21 +139,41 @@ class ProxyListMixin:
         preserve_addr = self._preserve_addr if preserve is True else preserve
         proxy_kwargs = {k[6:]: kwargs.pop(k) for k in tuple(kwargs.keys())
                         if k.startswith('proxy_')}
+        allow_no_proxy = kwargs.pop('allow_no_proxy', self.allow_no_proxy)
+        if allow_no_proxy:
+            proxy_kwargs.setdefault('wait', False)
 
         exclude = []
         for _ in range(max_retries):
-            proxy = self.proxylist.get(strategy, exclude=exclude, preserve=preserve_addr,
-                                       **proxy_kwargs)
-            kwargs['proxies'] = {'http': proxy.url, 'https': proxy.url}
+
+            try:
+                proxy = self.proxylist.get(strategy, exclude=exclude, preserve=preserve_addr,
+                                           **proxy_kwargs)
+            except (ProxyMaxRetriesExceeded, InsufficientProxiesError, Timeout) as exc:
+                if allow_no_proxy:
+                    proxy = None
+                    kwargs['proxies'] = None
+                else:
+                    raise
+            else:
+                kwargs['proxies'] = {'http': proxy.url, 'https': proxy.url}
+
             exc_ = None  # workaround for "smart" python3 variable clearing
             try:
                 resp = func(*args, **kwargs)
             except Exception as exc:
+                # NOTE: timeout extends BaseException and should not match
+                if not proxy:
+                    raise
                 self.proxylist.fail(proxy, exc=exc)
                 exclude.append(proxy.addr)
                 exc_ = exc  # workaround for "smart" python3 variable clearing
             else:
-                if not response_validator or response_validator(resp):
+                if not proxy:
+                    resp._proxy = None
+                    # NOTE: no content validator if no proxy was used
+                    return resp
+                elif not response_validator or response_validator(resp):
                     self.proxylist.success(proxy)
                     if preserve is True:
                         self._preserve_addr = proxy.addr
@@ -168,11 +212,9 @@ class ProxyListSession(ProxyListMixin, ConfigurableSession):
     # so total timeout would be proxy_max_retries * timeout
     timeout = TIMEOUT_DEFAULT
 
-    def __init__(self, proxylist, forgetful_cookies=False, **kwargs):
+    def __init__(self, proxylist, **kwargs):
         adapter = SharedProxyManagerHTTPAdapter(proxylist.proxy_pool_manager)
         kwargs['mount'] = {'http://': adapter, 'https://': adapter}
-        if forgetful_cookies:
-            kwargs['cookies'] = ForgetfulCookieJar()
         super().__init__(proxylist, **kwargs)
 
     def request(self, *args, **kwargs):

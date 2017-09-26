@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timedelta
 
 from .models import Proxy, AbstractProxyProcessor
+from .proxychecker import ProxyChecker
 from .utils import EntityLoggerAdapter, classproperty, str_to_enum, import_string
 
 
@@ -15,6 +16,8 @@ class ProxyFetcher(AbstractProxyProcessor):
         super().__init__(proxy, pool, pool_size)
         # TODO: implement stop on limit!
 
+        if isinstance(checker, dict):
+            checker = ProxyChecker(**checker)
         self.checker = checker
         if self.checker:
             # TODO: NOTE!!! this is not set on lazy add setting
@@ -94,8 +97,8 @@ class ProxyFetcher(AbstractProxyProcessor):
 
 class ConcreteProxyFetcher(AbstractProxyProcessor):
     def __init__(self, proxy=None, pool=None, pool_size=None, blacklist=None,
-                 session=None, types=None, countries=None, anonymities=None,
-                 success_delta=None):
+                 types=None, countries=None, anonymities=None, success_delta=None,
+                 session=None, proxylist=None, session_params={}):
         super().__init__(proxy, pool, pool_size, blacklist)
 
         self.types = types and set(str_to_enum(t, Proxy.TYPE) for t in types) or None
@@ -104,20 +107,22 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
         self.success_delta = success_delta
 
         self.logger = EntityLoggerAdapter(logger, self.name)
-        self.session = session or self.create_session()
+        self.session = session or self.create_session(proxylist, **session_params)
 
     @classproperty
     def name(cls):
         return cls.__name__.lower().replace('proxyfetcher', '')
 
-    def create_session(self):
-        # TODO: create session using current proxylist
+    def create_session(self, proxylist, **params):
         # Lazy import requests because of gevent.monkey_patch
-        from .requests import ConfigurableSession
-        session = ConfigurableSession(timeout=10)
-        session.headers['User-Agent'] = ('Mozilla/5.0 (X11; Linux x86_64) '
-                                         'AppleWebKit/537.36 (KHTML, like Gecko) '
-                                         'Chrome/59.0.3071.86 Safari/537.36')
+        from .requests import ConfigurableSession, ProxyListSession
+        params.setdefault('timeout', 10)
+        params.setdefault('random_user_agent', True)
+        if proxylist:
+            params.setdefault('allow_no_proxy', True)
+            session = ProxyListSession(proxylist, **params)
+        else:
+            session = ConfigurableSession(**params)
         return session
 
     def filter(self, proxy, now=None):

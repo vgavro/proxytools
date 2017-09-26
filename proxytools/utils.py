@@ -1,6 +1,7 @@
 import logging
 import json
 import enum
+import random
 import collections
 from datetime import datetime, date, time
 import time as time_
@@ -238,3 +239,22 @@ def get_response_speed(resp, start_at):
     assert resp.content  # just check that content is read
     kb = int(resp.headers.get('Content-Length')) / 1024
     return round(kb / (time_.time() - start_at), 2)
+
+
+# from https://techblog.willshouse.com/2012/01/03/most-common-user-agents/
+COMMON_USER_AGENTS = [
+    ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+     '(KHTML, like Gecko) Chrome/60.0.3112.113 Safari/537.36'),
+    ('Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 '
+     '(KHTML, like Gecko) Chrome/60.0.3112.113 Safari/537.36'),
+    ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 '
+     '(KHTML, like Gecko) Chrome/60.0.3112.113 Safari/537.36'),
+    ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/603.3.8 '
+     '(KHTML, like Gecko) Version/10.1.2 Safari/603.3.8'),
+]
+
+
+def get_random_user_agent(user_agents=True):
+    if user_agents is True:
+        return random.choice(COMMON_USER_AGENTS)
+    return random.choice(user_agents)

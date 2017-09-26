@@ -8,7 +8,7 @@ from .utils import from_isoformat, to_isoformat, str_to_enum
 
 class TYPE(enum.Enum):
     HTTP = 'http'
-    HTTPS = 'https'
+    HTTPS = 'https'  # "CONNECT" tunneling
     SOCKS4 = 'socks4'
     SOCKS5 = 'socks5'
 

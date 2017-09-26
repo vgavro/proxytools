@@ -182,15 +182,11 @@ def superproxy(config, listen):
 
     from gevent.pywsgi import WSGIServer
     from .superproxy import WSGISuperProxy
-    from .proxychecker import ProxyChecker
-    from .proxyfetcher import ProxyFetcher
     from .proxylist import ProxyList
 
-    conf = config.get('proxychecker', {})
-    checker = ProxyChecker(**conf)
-
-    conf = config.get('proxyfetcher', {})
-    fetcher = ProxyFetcher(checker=checker, **conf)
+    # TODO: not properly working if no checker or fetcher specified in config?
+    fetcher = config.get('proxyfetcher', {}).copy()
+    fetcher['checker'] = config.get('proxychecker', {})
 
     conf = config.get('superproxy', {})
     proxylist = ProxyList(fetcher=fetcher, **conf.pop('proxylist', {}))

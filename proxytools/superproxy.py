@@ -32,11 +32,14 @@ def reconstruct_url(environ):
 
 SUPERPROXY_HEADERS = {
     # decode, encode
-    'timeout': (int, str),  # TODO: proxying only proxy_* kwargs
+    # TODO: proxying only proxy_* kwargs
+    'timeout': (int, str),
+    'allow_no_proxy': (lambda x: bool(int(x)), lambda x: str(int(x))),
     'proxy_strategy': (lambda x: str(x).upper(), lambda x: str(x).upper()),
     'proxy_max_retries': (int, str),
     'proxy_rest': (int, str),
-    'proxy_wait': (int, str),
+    'proxy_wait': (lambda x: {'-1': False, '0': True}.get(x, int(x)),
+                   lambda x: str({True: 0, False: -1}.get(x, x))),
     'proxy_preserve': (str, str),
     'proxy_countries': (lambda x: x.split(','), lambda x: ','.join(x)),
     'proxy_response_validator': (ResponseValidator._from_superproxy_header,
@@ -87,7 +90,7 @@ class WSGISuperProxy:
 
         try:
             resp = self.session.request(method, url, data=data, headers=headers, **kwargs)
-        except Exception as exc:
+        except BaseException as exc:
             logger.error('%r', exc)
             content = repr(exc).encode('utf-8')
             start_response('500 Internal Server Error',
