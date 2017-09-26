@@ -32,13 +32,15 @@ class ProxyMaxRetriesExceeded(RuntimeError):
 
 class ProxyList:
     def __init__(self, fetcher=None, min_size=50, max_fail=3, max_simultaneous=2,
-                 rest=0, filename=None, atexit_save=False):
+                 success_timeout=0, fail_timeout=0,
+                 filename=None, atexit_save=False):
         if min_size <= 0:
             raise ValueError('min_size must be positive')
         self.min_size = min_size
         self.max_fail = max_fail
         self.max_simultaneous = max_simultaneous
-        self.rest = 0  # timeout for proxy to rest after success
+        self.success_timeout = success_timeout
+        self.fail_timeout = fail_timeout
 
         # Event is set each time proxy is added or released
         self.proxy_avail = Event()
@@ -106,7 +108,7 @@ class ProxyList:
             self.active_proxies[proxy.addr] = proxy
             self.proxy_avail.set()
 
-    def fail(self, proxy, exc=None, resp=None):
+    def fail(self, proxy, exc=None, resp=None, timeout=None):
         if exc:
             reason = ' exception: {!r}'.format(exc)
         elif resp:
@@ -122,7 +124,12 @@ class ProxyList:
             if proxy.fail >= self.max_fail:
                 self.blacklist(proxy)
             else:
-                self.proxy_avail.set()
+                timeout = self.fail_timeout if timeout is None else timeout
+                if timeout:
+                    rest_till = proxy.fail_at + timedelta(seconds=timeout)
+                    if not proxy.rest_till or proxy.rest_till < rest_till:
+                        proxy.rest_till = rest_till
+                self.proxy_avail.set()  # TODO: consider rest_till?
                 sleep(0)  # switch to other greenlet for fair play
 
     def blacklist(self, proxy):
@@ -135,28 +142,45 @@ class ProxyList:
         logger.debug('Blacklist: %s %s', proxy.addr, self._stats_str)
         self.maybe_update()
 
-    def success(self, proxy):
+    def success(self, proxy, timeout=None):
         proxy.success_at = datetime.utcnow()
         proxy.fail_at = None
         proxy.fail = 0
         proxy.in_use -= 1
         assert proxy.in_use >= 0
-        self.proxy_avail.set()
+        timeout = self.success_timeout if timeout is None else timeout
+        if timeout:
+            rest_till = proxy.success_at + timedelta(seconds=timeout)
+            if not proxy.rest_till or proxy.rest_till < rest_till:
+                proxy.rest_till = rest_till
+        self.proxy_avail.set()  # TODO: consider rest_till?
         sleep(0)  # switch to other greenlet for fair play
 
-    def get_ready_proxies(self, rest=None, exclude=[], countries=None):
+    def rest(self, proxy, timeout, resp=None):
+        proxy.in_use -= 1
+        assert proxy.in_use >= 0
+        rest_till = datetime.utcnow() + timedelta(seconds=timeout)
+        if not proxy.rest_till or proxy.rest_till < rest_till:
+            proxy.rest_till = rest_till
+        reason = resp and ' response: {}'.format(repr_response(resp)) or ''
+        logger.debug('Rest: %s%s till %s %s', proxy.addr, reason, proxy.rest_till, self._stats_str)
+
+    @property
+    def in_use(self):
+        return sum([p.in_use for p in self.active_proxies])
+
+    def get_ready_proxies(self, exclude=[], countries=None):
         now = datetime.utcnow()
-        rest = self.rest if rest is None else rest
         return {
             addr: p
             for addr, p in self.active_proxies.items()
             if p.in_use < self.max_simultaneous and
             addr not in exclude and
-            (now - p.success_at).total_seconds() > rest and
+            (not p.rest_till or p.rest_till < now) and
             (not countries or p.country in countries)
         }
 
-    def get(self, strategy, rest=None, exclude=[], preserve=None, wait=True, countries=None):
+    def get(self, strategy, exclude=[], persist=None, wait=True, countries=None):
         if not callable(strategy):
             if isinstance(strategy, str):
                 strategy = getattr(self, GET_STRATEGY[strategy].value)
@@ -167,10 +191,10 @@ class ProxyList:
 
         ident = get_ident()
         while True:
-            ready_proxies = self.get_ready_proxies(rest, exclude, countries)
+            ready_proxies = self.get_ready_proxies(exclude, countries)
             if ready_proxies:
                 break
-            elif wait is False or not self.fetcher or self.fetcher.ready:
+            elif wait is False or ((not self.fetcher or self.fetcher.ready) and not self.in_use):
                 raise InsufficientProxiesError('Insufficient proxies {}'
                                                .format(self._stats_str))
             else:
@@ -190,11 +214,11 @@ class ProxyList:
         if ident in self.waiting:
             del self.waiting[ident]
 
-        if preserve:
-            preserve = ready_proxies.get(preserve, None)
-            if preserve:
-                preserve.in_use += 1
-                return preserve
+        if persist:
+            persist = ready_proxies.get(persist, None)
+            if persist:
+                persist.in_use += 1
+                return persist
         proxy = strategy(ready_proxies)
         if proxy:
             proxy.in_use += 1

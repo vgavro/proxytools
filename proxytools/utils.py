@@ -23,10 +23,11 @@ def repr_response(resp, full=False):
                                  resp.url, content)
 
 
-class ResponseValidator:
+class ResponseMatch:
     """
     Helper class to be used instead callback to match requests.Response object for
-    proxy_response_validator param, also should be used with SuperProxySession.
+    proxy_success_response and proxy_rest_response params,
+    also should be used with SuperProxySession.
     """
     def __init__(self, status=[], status_not=[], text=[], text_not=[],
                  header=[], header_not=[]):

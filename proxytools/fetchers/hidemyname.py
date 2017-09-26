@@ -5,6 +5,7 @@ from ..proxyfetcher import ConcreteProxyFetcher, Proxy
 
 
 class HidemyNameProxyFetcher(ConcreteProxyFetcher):
+    # NOTE: looks like working ok only from UA ip?
     URL = 'https://hidemy.name/en/proxy-list/'
 
     ANONYMITY_MAP = {
@@ -25,9 +26,13 @@ class HidemyNameProxyFetcher(ConcreteProxyFetcher):
 
         pages = self.pages or self.parse_pages_count(doc)
         for i in range(1, pages):
-            self.spawn(self.page_worker, i * 64)
-
-        return self.parse_proxies(doc)
+            if not self.session.request_wait:
+                self.spawn(self.page_worker, i * 64)
+            else:
+                for p in self.page_worker(i * 64):
+                    yield p
+        for p in self.parse_proxies(doc):
+            yield p
 
     def page_worker(self, start):
         resp = self.session.get(self.URL + '?start={}'.format(start))

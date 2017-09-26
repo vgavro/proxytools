@@ -121,7 +121,7 @@ class ProxyListMixin:
         self.allow_no_proxy = allow_no_proxy
         self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs.keys())
                              if k.startswith('proxy_')}
-        self._preserve_addr = None
+        self._persist_addr = None
         super().__init__(**kwargs)
 
     def _proxylist_call(self, func, *args, **kwargs):
@@ -134,9 +134,15 @@ class ProxyListMixin:
 
         strategy = kwargs.pop('proxy_strategy', self.proxylist._get_fastest)
         max_retries = kwargs.pop('proxy_max_retries', PROXY_MAX_RETRIES_DEFAULT)
-        response_validator = kwargs.pop('proxy_response_validator', None)
-        preserve = kwargs.pop('proxy_preserve', False)
-        preserve_addr = self._preserve_addr if preserve is True else preserve
+        success_response = kwargs.pop('proxy_success_response', None)
+        success_timeout = kwargs.pop('proxy_success_timeout', None)
+        fail_timeout = kwargs.pop('proxy_fail_timeout', None)
+        rest_response = kwargs.pop('proxy_rest_response', None)
+        rest_timeout = kwargs.pop('proxy_rest_timeout', None)
+        if rest_response and not rest_timeout:
+            raise ValueError('rest_response must be used with rest_timeout > 0')
+        persist = kwargs.pop('proxy_persist', False)
+        persist_addr = self._persist_addr if persist is True else persist
         proxy_kwargs = {k[6:]: kwargs.pop(k) for k in tuple(kwargs.keys())
                         if k.startswith('proxy_')}
         allow_no_proxy = kwargs.pop('allow_no_proxy', self.allow_no_proxy)
@@ -147,7 +153,7 @@ class ProxyListMixin:
         for _ in range(max_retries):
 
             try:
-                proxy = self.proxylist.get(strategy, exclude=exclude, preserve=preserve_addr,
+                proxy = self.proxylist.get(strategy, exclude=exclude, persist=persist_addr,
                                            **proxy_kwargs)
             except (ProxyMaxRetriesExceeded, InsufficientProxiesError, Timeout) as exc:
                 if allow_no_proxy:
@@ -165,25 +171,32 @@ class ProxyListMixin:
                 # NOTE: timeout extends BaseException and should not match
                 if not proxy:
                     raise
-                self.proxylist.fail(proxy, exc=exc)
+                self.proxylist.fail(proxy, exc=exc, timeout=fail_timeout)
+                if persist is True:
+                    self._persist_addr = None
                 exclude.append(proxy.addr)
                 exc_ = exc  # workaround for "smart" python3 variable clearing
             else:
                 if not proxy:
                     resp._proxy = None
-                    # NOTE: no content validator if no proxy was used
+                    # NOTE: no content validation if no proxy was used
                     return resp
-                elif not response_validator or response_validator(resp):
-                    self.proxylist.success(proxy)
-                    if preserve is True:
-                        self._preserve_addr = proxy.addr
+                if rest_response and rest_response(resp):
+                    self.proxylist.rest(proxy, rest_timeout)
+                    if persist is True:
+                        self._persist_addr = None
+                    exclude.append(proxy.addr)
+                elif not success_response or success_response(resp):
+                    self.proxylist.success(proxy, timeout=success_timeout)
+                    if persist is True:
+                        self._persist_addr = proxy.addr
                     # NOTE: maybe remove it, test purpose only (also used in superproxy)
                     resp._proxy = proxy
                     return resp
                 else:
-                    self.proxylist.fail(proxy, resp=resp)
-                    if preserve is True:
-                        self._preserve_addr = None
+                    self.proxylist.fail(proxy, resp=resp, timeout=fail_timeout)
+                    if persist is True:
+                        self._persist_addr = None
                     exclude.append(proxy.addr)
         reason_repr = exc_ and repr(exc_) or repr_response(resp)
         raise ProxyMaxRetriesExceeded('Max retries exceeded: {} {}'
@@ -242,7 +255,7 @@ class SuperProxySession(ConfigurableSession):
     def __init__(self, superproxy_url, **kwargs):
         self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs)
                              if k.startswith('proxy_')}
-        self._preserve_addr = None
+        self._persist_addr = None
         adapter = SimpleHTTPSProxyManagerHTTPAdapter()
         kwargs['mount'] = {'http://': adapter, 'https://': adapter}
         kwargs['proxies'] = {'http': superproxy_url, 'https': superproxy_url}
@@ -256,9 +269,9 @@ class SuperProxySession(ConfigurableSession):
 
         for k, v in self.proxy_kwargs.items():
             kwargs.setdefault(k, v)
-        preserve = kwargs.pop('proxy_preserve', False)
-        if preserve is True and self._preserve_addr:
-            kwargs['proxy_preserve'] = self._preserve_addr
+        persist = kwargs.pop('proxy_persist', False)
+        if persist is True and self._persist_addr:
+            kwargs['proxy_persist'] = self._persist_addr
 
         proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs)
                         if k.startswith('proxy_')}
@@ -268,8 +281,8 @@ class SuperProxySession(ConfigurableSession):
 
         resp = super().request(method, url, headers=headers, **kwargs)
 
-        if preserve:
-            self._preserve_addr = resp.headers.get('X-Superproxy-Addr')
+        if persist:
+            self._persist_addr = resp.headers.get('X-Superproxy-Addr')
 
         return resp
 

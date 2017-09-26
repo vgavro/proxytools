@@ -29,11 +29,11 @@ class Proxy:
     ANONYMITY = ANONYMITY
 
     __slots__ = ('addr types anonymity country speed fetch_at fetch_sources '
-                 'success_at fail_at fail in_use').split()
+                 'success_at fail_at fail in_use rest_till').split()
 
     def __init__(self, addr, types, anonymity=None, country=None, speed=None,
                  fetch_at=None, fetch_sources=None,
-                 success_at=None, fail_at=None, fail=0, in_use=0):
+                 success_at=None, fail_at=None, fail=0, in_use=0, rest_till=None):
 
         types = set(str_to_enum(t, TYPE) for t in types)
         if types.intersection(SOCKS_TYPES):
@@ -46,10 +46,10 @@ class Proxy:
 
         (self.addr, self.types, self.anonymity, self.country, self.speed,
          self.fetch_at, self.fetch_sources,
-         self.success_at, self.fail_at, self.fail, self.in_use) = \
+         self.success_at, self.fail_at, self.fail, self.in_use, self.rest_till) = \
             (addr, set(types), anonymity, country, speed,
              fetch_at, fetch_sources and set(fetch_sources) or set(),
-             success_at, fail_at, fail, in_use)
+             success_at, fail_at, fail, in_use, rest_till)
 
     def __hash__(self):
         return self.addr
@@ -113,13 +113,14 @@ class Proxy:
             ('success_at', self.success_at and to_isoformat(self.success_at)),
             ('fail_at', self.fail_at and to_isoformat(self.fail_at)),
             ('fail', self.fail),
+            ('rest_till', self.rest_till and to_isoformat(self.rest_till)),
         ))
 
     @classmethod
     def from_json(cls, data):
         data = data.copy()
         for key, value in data.items():
-            if value and key in ('success_at', 'fetch_at', 'fail_at'):
+            if value and key in ('success_at', 'fetch_at', 'fail_at', 'rest_till'):
                 data[key] = from_isoformat(value)
             elif value and key == 'fetch_sources':
                 data[key] = set(value)

@@ -1,6 +1,6 @@
 import logging
 
-from .utils import ResponseValidator
+from .utils import ResponseMatch
 
 
 logger = logging.getLogger(__name__)
@@ -37,13 +37,17 @@ SUPERPROXY_HEADERS = {
     'allow_no_proxy': (lambda x: bool(int(x)), lambda x: str(int(x))),
     'proxy_strategy': (lambda x: str(x).upper(), lambda x: str(x).upper()),
     'proxy_max_retries': (int, str),
-    'proxy_rest': (int, str),
     'proxy_wait': (lambda x: {'-1': False, '0': True}.get(x, int(x)),
                    lambda x: str({True: 0, False: -1}.get(x, x))),
-    'proxy_preserve': (str, str),
+    'proxy_persist': (str, str),
     'proxy_countries': (lambda x: x.split(','), lambda x: ','.join(x)),
-    'proxy_response_validator': (ResponseValidator._from_superproxy_header,
-                                 lambda x: x._to_superproxy_header()),
+    'proxy_success_response': (ResponseMatch._from_superproxy_header,
+                               lambda x: x._to_superproxy_header()),
+    'proxy_success_timeout': (int, str),
+    'proxy_rest_response': (ResponseMatch._from_superproxy_header,
+                            lambda x: x._to_superproxy_header()),
+    'proxy_rest_timeout': (int, str),
+    'proxy_fail_timeout': (int, str),
 }
 
 
