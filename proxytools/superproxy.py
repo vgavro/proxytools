@@ -41,6 +41,7 @@ SUPERPROXY_HEADERS = {
                    lambda x: str({True: 0, False: -1}.get(x, x))),
     'proxy_persist': (str, str),
     'proxy_countries': (lambda x: x.split(','), lambda x: ','.join(x)),
+    'proxy_countries_exclude': (lambda x: x.split(','), lambda x: ','.join(x)),
     'proxy_success_response': (ResponseMatch._from_superproxy_header,
                                lambda x: x._to_superproxy_header()),
     'proxy_success_timeout': (int, str),
