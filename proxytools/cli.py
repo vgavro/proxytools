@@ -1,5 +1,6 @@
 import sys
 from collections import OrderedDict
+import logging
 import logging.config
 import http.client
 
@@ -7,6 +8,7 @@ from click import command, option, echo, BadOptionUsage
 import coloredlogs
 import yaml
 
+from .models import HTTP_TYPES, SOCKS_TYPES
 from .utils import dict_merge, JSONEncoder, CompositeContains, gevent_monkey_patch
 
 
@@ -166,7 +168,12 @@ def fetcher(config, show_list, fetchers, check, pool_size,
     fetcher = ProxyFetcher(fetchers_, checker=checker, proxy=proxy, types=types, **conf)
 
     fetcher(join=True)
-
+    logging.info(
+        'Fetched %s proxies (http/https %s, socks %s)',
+        len(proxies),
+        len([p for p in proxies.values() if p.types.intersection(HTTP_TYPES)]),
+        len([p for p in proxies.values() if p.types.intersection(SOCKS_TYPES)]),
+    )
     json_encoder.dump(proxies.values(), save or sys.stdout)
 
 

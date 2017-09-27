@@ -72,8 +72,11 @@ def create_country_name_to_alpha2():
     rv = {k.upper(): v for k, v in COUNTRY_NAME_TO_COUNTRY_ALPHA2.items()}
     rv.update({
         'KOREA': 'KR',
+        'REPUBLIC OF KOREA': 'KR',
         'PALESTINIAN TERRITORY': 'PS',
         'COTE D\'IVOIRE': 'CI',
+        'MYANMAR [BURMA]': 'MM',
+        'UNKNOWN': None,
     })
     for country in countries:
         for attr in ('name', 'common_name', 'official_name'):
