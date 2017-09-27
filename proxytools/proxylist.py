@@ -12,7 +12,7 @@ from gevent.thread import get_ident
 
 from .models import Proxy
 from .proxyfetcher import ProxyFetcher
-from .utils import CompositeContains, repr_response
+from .utils import JSONEncoder, CompositeContains, repr_response
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class ProxyMaxRetriesExceeded(RuntimeError):
 class ProxyList:
     def __init__(self, fetcher=None, min_size=50, max_fail=3, max_simultaneous=2,
                  success_timeout=0, fail_timeout=0,
-                 filename=None, atexit_save=False):
+                 filename=None, atexit_save=False, json_encoder={}):
         if min_size <= 0:
             raise ValueError('min_size must be positive')
         self.min_size = min_size
@@ -43,7 +43,7 @@ class ProxyList:
         self.fail_timeout = fail_timeout
 
         # Event is set each time proxy is added or released
-        self.proxy_avail = Event()
+        self.proxy_ready = Event()
 
         self.active_proxies = {}
         self.blacklist_proxies = {}
@@ -60,6 +60,10 @@ class ProxyList:
                 fetcher.blacklist = CompositeContains(self.active_proxies,
                                                       self.blacklist_proxies)
         self.fetcher = fetcher
+
+        if isinstance(json_encoder, dict):
+            json_encoder = JSONEncoder(json_encoder)
+        self.json_encoder = json_encoder
 
         if filename and os.path.exists(filename):
             self.load(filename)
@@ -95,18 +99,18 @@ class ProxyList:
             self.fetcher()
 
     def proxy(self, proxy):
-        if proxy.fail_at and proxy.fail_at > proxy.success_at:
-            self.blacklist(proxy)
-
-        elif proxy.addr in self.active_proxies:
+        if proxy.addr in self.active_proxies:
             self.active_proxies[proxy.addr].merge_meta(proxy)
 
         elif proxy.addr in self.blacklist_proxies:
             self.blacklist_proxies[proxy.addr].merge_meta(proxy)
 
+        elif proxy.fail_at and proxy.fail_at > proxy.success_at:
+            self.blacklist(proxy)
+
         else:
             self.active_proxies[proxy.addr] = proxy
-            self.proxy_avail.set()
+            self.proxy_ready.set()
 
     def fail(self, proxy, exc=None, resp=None, timeout=None):
         if exc:
@@ -129,7 +133,7 @@ class ProxyList:
                     rest_till = proxy.fail_at + timedelta(seconds=timeout)
                     if not proxy.rest_till or proxy.rest_till < rest_till:
                         proxy.rest_till = rest_till
-                self.proxy_avail.set()  # TODO: consider rest_till?
+                self.proxy_ready.set()  # TODO: consider rest_till?
                 sleep(0)  # switch to other greenlet for fair play
 
     def blacklist(self, proxy):
@@ -153,7 +157,7 @@ class ProxyList:
             rest_till = proxy.success_at + timedelta(seconds=timeout)
             if not proxy.rest_till or proxy.rest_till < rest_till:
                 proxy.rest_till = rest_till
-        self.proxy_avail.set()  # TODO: consider rest_till?
+        self.proxy_ready.set()  # TODO: consider rest_till?
         sleep(0)  # switch to other greenlet for fair play
 
     def rest(self, proxy, timeout, resp=None):
@@ -199,7 +203,7 @@ class ProxyList:
                                                .format(self._stats_str))
             else:
                 # logger.info('Wait proxy (thread %s) %s', ident, self._stats_str)
-                self.proxy_avail.clear()
+                self.proxy_ready.clear()
                 if ident not in self.waiting:
                     #TODO: maybe more stats here
                     self.waiting[ident] = datetime.utcnow()
@@ -208,7 +212,7 @@ class ProxyList:
                     del self.waiting[ident]
                     raise Timeout(wait)
                 try:
-                    self.proxy_avail.wait(None if wait is True else wait)
+                    self.proxy_ready.wait(None if wait is True else wait)
                 except (Timeout, GreenletExit):
                     del self.waiting[ident]
         if ident in self.waiting:
@@ -253,25 +257,19 @@ class ProxyList:
     def load(self, filename):
         with open(filename, 'r') as fh:
             data = json.load(fh)
-        if isinstance(data, dict):
-            for key in ('active_proxies', 'blacklist_proxies'):
-                proxies = getattr(self, key)
-                for proxy in data[key]:
-                    proxy = Proxy.from_json(proxy)
-                    proxies[proxy.addr] = proxy
-        else:
-            for proxy in data:
-                self.add(Proxy.from_json(proxy))
+        for proxy in data:
+            self.proxy(Proxy.from_json(proxy))
         logger.info('Loaded proxies status %s %s', filename, self._stats_str)
+
+    def get_proxies_json(self):
+        return self.json_encoder.dumps(tuple(self.active_proxies.values()) +
+                                       tuple(self.blacklist_proxies.values()))
 
     def save(self, filename=None):
         filename = filename or self.atexit_save
         if not filename:
             raise ValueError('Please specify filename or '
                              'init ProxyList with atexit_save attribute')
-        data = {}
-        for key in ('active_proxies', 'blacklist_proxies'):
-            data[key] = tuple(p.to_json() for p in getattr(self, key).values())
         logger.info('Saving proxies status %s %s', filename, self._stats_str)
         with open(filename, 'w') as fh:
-            json.dump(data, fh)
+            fh.write(self.get_proxies_json())

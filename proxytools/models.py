@@ -37,7 +37,7 @@ class Proxy:
 
         types = set(str_to_enum(t, TYPE) for t in types)
         if types.intersection(SOCKS_TYPES):
-            assert not types.intersection(HTTP_TYPES)
+            assert not types.intersection(HTTP_TYPES), 'Proxy incompatible types: ' + addr
 
         if TYPE.HTTP not in types:
             anonymity = ANONYMITY.HIGH
@@ -91,8 +91,15 @@ class Proxy:
     def merge_meta(self, proxy):
         # hidester not showing if proxy type also https, for example
         # so we may want to merge this info from more verbose sources
+        if self.types.intersection(HTTP_TYPES):
+            if proxy.types.intersection(SOCKS_TYPES):
+                return
+        elif self.types.intersection(SOCKS_TYPES):
+            if proxy.types.intersection(HTTP_TYPES):
+                return
 
         self.types.update(proxy.types)
+
         self.fetch_sources.update(proxy.fetch_sources)
         if not self.country:
             self.country = proxy.country

@@ -38,13 +38,14 @@ class ConfigurableSession(Session):
     """
     Helper class that allows to pass some parameters to __init__
     instead of settings them later.
-    Extends with request_wait, retry_response, retry_count,
+    Extends with request_wait, retries,
     forgetful_cookies, random_user_agent params.
     Allows to set default timeout for each request and
     override allow_redirects.
     """
-    def __init__(self, request_wait=0, retry_response=None, retry_count=0,
-                 forgetful_cookies=False, random_user_agent=False, **kwargs):
+    def __init__(self, request_wait=0, retry_response=None, retry_exception=None,
+                 retry_count=0, retry_wait=0, forgetful_cookies=False,
+                 random_user_agent=False, **kwargs):
         super().__init__()
 
         # to specify ordering this may be OrderedDict
@@ -67,7 +68,9 @@ class ConfigurableSession(Session):
         self.request_wait = request_wait
         self.request_at = None
         self.retry_response = retry_response
+        self.retry_exception = retry_exception
         self.retry_count = retry_count
+        self.retry_wait = retry_wait
 
         if forgetful_cookies:
             assert 'cookies' not in kwargs
@@ -83,22 +86,31 @@ class ConfigurableSession(Session):
 
         request_wait = kwargs.pop('request_wait', self.request_wait)
         retry_response = kwargs.pop('retry_response', self.retry_response)
+        retry_exception = kwargs.pop('retry_exception', self.retry_exception)
         retry_count = kwargs.get('retry_count', self.retry_count)
+        retry_wait = kwargs.get('retry_wait', self.retry_count)
 
-        for _ in range(retry_count + 1):
-            while request_wait and self.request_at:
+        for retry in range(retry_count + 1):
+            wait = retry and retry_wait or request_wait
+            while wait and self.request_at:
                 # checking continuous for simultaneous use
                 delta = (datetime.utcnow() - self.request_at).total_seconds()
-                if 0 < delta < self.request_wait:
-                    sleep(self.request_wait - delta)
+                if 0 < delta < wait:
+                    sleep(wait - delta)
                 else:
                     break
             self.request_at = datetime.utcnow()
 
-            resp = super().request(*args, **kwargs)
-
+            try:
+                resp = super().request(*args, **kwargs)
+            except Exception as exc:
+                if (retry_exception and retry_exception(exc) and
+                   retry < retry_count):
+                    continue
+                raise
             if retry_response and retry_response(resp):
                 continue
+            break
         return resp
 
 

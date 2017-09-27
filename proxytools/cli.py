@@ -8,7 +8,6 @@ from click import command, option, echo, BadOptionUsage
 import coloredlogs
 import yaml
 
-from .models import HTTP_TYPES, SOCKS_TYPES
 from .utils import dict_merge, JSONEncoder, CompositeContains, gevent_monkey_patch
 
 
@@ -166,14 +165,24 @@ def fetcher(config, show_list, fetchers, check, pool_size,
         conf['pool_size'] = pool_size
 
     fetcher = ProxyFetcher(fetchers_, checker=checker, proxy=proxy, types=types, **conf)
-
     fetcher(join=True)
-    logging.info(
-        'Fetched %s proxies (http/https %s, socks %s)',
-        len(proxies),
-        len([p for p in proxies.values() if p.types.intersection(HTTP_TYPES)]),
-        len([p for p in proxies.values() if p.types.intersection(SOCKS_TYPES)]),
-    )
+
+    http_count, socks_count, sources = 0, 0, {}
+    for p in proxies.values():
+        if tuple(p.types)[0].name.startswith('HTTP'):
+            http_count += 1
+        else:
+            socks_count += 1
+        for source in p.fetch_sources:
+            sources.setdefault(source, {'total': 0, 'uniq': 0})
+            sources[source]['total'] += 1
+            if len(p.fetch_sources) == 1:
+                sources[source]['uniq'] += 1
+    sources = ', '.join(['{0}:total={1[total]} uniq={1[uniq]}'.format(k, v)
+                         for k, v in sources.items()])
+    logging.info('Fetched %s proxies (http(s)=%s, socks=%s %s)',
+        len(proxies), http_count, socks_count, sources)
+
     json_encoder.dump(proxies.values(), save or sys.stdout)
 
 
