@@ -5,8 +5,8 @@ from ..utils import country_name_to_alpha2
 
 
 class HidesterProxyFetcher(ConcreteProxyFetcher):
-    URL = 'https://hidester.com/proxydata/php/data.php?mykey=csv&gproxy=2'
-    REFERER = 'https://hidester.com/proxylist/'
+    WEB_URL = 'https://hidester.com/proxylist/'
+    JSON_URL = 'https://hidester.com/proxydata/php/data.php?mykey=csv&gproxy=2'
 
     ANONYMITY_MAP = {
         'Elite': Proxy.ANONYMITY.HIGH,
@@ -15,7 +15,8 @@ class HidesterProxyFetcher(ConcreteProxyFetcher):
     }
 
     def worker(self):
-        resp = self.session.get(self.URL, headers={'Referer': self.REFERER})
+        resp = self.session.get(self.WEB_URL)  # getting required cookies
+        resp = self.session.get(self.JSON_URL, headers={'Referer': self.WEB_URL})
         resp.raise_for_status()
         for proxy in resp.json():
             yield Proxy(
