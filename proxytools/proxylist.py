@@ -167,7 +167,7 @@ class ProxyList:
 
     @property
     def in_use(self):
-        return sum([p.in_use for p in self.active_proxies])
+        return sum([p.in_use for p in self.active_proxies.values()])
 
     def get_ready_proxies(self, exclude=[], countries=None):
         now = datetime.utcnow()
