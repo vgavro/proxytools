@@ -12,7 +12,7 @@ from gevent.thread import get_ident
 
 from .models import Proxy
 from .proxyfetcher import ProxyFetcher
-from .utils import JSONEncoder, CompositeContains, repr_response
+from .utils import JSONEncoder, CompositeContains, repr_response, import_string
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class ProxyMaxRetriesExceeded(RuntimeError):
 
 class ProxyList:
     def __init__(self, fetcher=None, min_size=50, max_fail=3, max_simultaneous=2,
-                 success_timeout=0, fail_timeout=0,
+                 success_timeout=0, fail_timeout=0, update_on=None,
                  filename=None, atexit_save=False, json_encoder={}):
         if min_size <= 0:
             raise ValueError('min_size must be positive')
@@ -79,9 +79,14 @@ class ProxyList:
             logger.info('Start fetch %s', self._stats_str)
             fetcher()
 
+        if isinstance(update_on, str):
+            update_on = import_string(update_on)
+        self.update_on = update_on
+
     @property
     def need_update(self):
-        return len(self.active_proxies) < self.min_size
+        return (len(self.active_proxies) < self.min_size or
+                (self.update_on and self.update_on(self)))
 
     @property
     def _stats_str(self):
@@ -94,7 +99,7 @@ class ProxyList:
         if not len(self.active_proxies) and not self.fetcher:
             raise InsufficientProxiesError('Insufficient proxies {}'
                                            .format(self._stats_str))
-        if self.need_update and self.fetcher and self.fetcher.ready:
+        if self.fetcher and self.fetcher.ready and self.need_update:
             logger.info('Start fetch %s', self._stats_str)
             self.fetcher()
 

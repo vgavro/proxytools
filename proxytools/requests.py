@@ -88,7 +88,7 @@ class ConfigurableSession(Session):
         retry_response = kwargs.pop('retry_response', self.retry_response)
         retry_exception = kwargs.pop('retry_exception', self.retry_exception)
         retry_count = kwargs.get('retry_count', self.retry_count)
-        retry_wait = kwargs.get('retry_wait', self.retry_count)
+        retry_wait = kwargs.get('retry_wait', self.retry_wait)
 
         for retry in range(retry_count + 1):
             wait = retry and retry_wait or request_wait
