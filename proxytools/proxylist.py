@@ -67,7 +67,7 @@ class ProxyList:
         self.fetcher = fetcher
 
         if isinstance(json_encoder, dict):
-            json_encoder = JSONEncoder(json_encoder)
+            json_encoder = JSONEncoder(**json_encoder)
         self.json_encoder = json_encoder
 
         if filename and os.path.exists(filename):
@@ -110,14 +110,15 @@ class ProxyList:
                 logger.warning('Update needed, but timeout not expired (%s), %s',
                                now - self.fetcher.started_at, self._stats_str)
 
-    def proxy(self, proxy):
-        if proxy.addr in self.active_proxies:
-            self.active_proxies[proxy.addr].merge_meta(proxy)
-
-        elif proxy.addr in self.blacklist_proxies:
+    def proxy(self, proxy, load=False):
+        if proxy.addr in self.blacklist_proxies or proxy.blacklist:
             self.blacklist_proxies[proxy.addr].merge_meta(proxy)
 
-        elif proxy.fail_at and proxy.fail_at > proxy.success_at:
+        elif proxy.addr in self.active_proxies:
+            self.active_proxies[proxy.addr].merge_meta(proxy)
+
+        elif not load and proxy.fail_at and proxy.fail_at > proxy.success_at:
+            # called after proxy checking and it was failed
             self.blacklist(proxy)
 
         else:
@@ -149,6 +150,7 @@ class ProxyList:
                 sleep(0)  # switch to other greenlet for fair play
 
     def blacklist(self, proxy):
+        proxy.blacklist = True
         if proxy.addr in self.active_proxies:
             del self.active_proxies[proxy.addr]
         self.blacklist_proxies[proxy.addr] = proxy
@@ -272,18 +274,16 @@ class ProxyList:
         with open(filename, 'r') as fh:
             data = json.load(fh)
         for proxy in data:
-            self.proxy(Proxy.from_json(proxy))
+            self.proxy(Proxy.from_json(proxy), load=True)
         logger.info('Loaded proxies status %s %s', filename, self._stats_str)
-
-    def get_proxies_json(self):
-        return self.json_encoder.dumps(tuple(self.active_proxies.values()) +
-                                       tuple(self.blacklist_proxies.values()))
 
     def save(self, filename=None):
         filename = filename or self.atexit_save
         if not filename:
             raise ValueError('Please specify filename or '
                              'init ProxyList with atexit_save attribute')
+        content = self.json_encoder.dumps(tuple(self.active_proxies.values()) +
+                                          tuple(self.blacklist_proxies.values()))
         logger.info('Saving proxies status %s %s', filename, self._stats_str)
         with open(filename, 'w') as fh:
-            fh.write(self.get_proxies_json())
+            fh.write(content)

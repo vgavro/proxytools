@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SuperProxy</title>
+  <link href='//unpkg.com/element-ui@1.4.6/lib/theme-default/index.css' rel="stylesheet">
+  <style>
+    body {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
+    [v-cloak] {
+      display: none;
+    }
+    .green {
+      color: #0faa54;
+    }
+    .red {
+      color: #FF4949;
+    }
+    .yellow {
+      color: #F7BA2A;
+    }
+    header {
+      background-color: #324157;
+      display: flex;
+      align-items: center;
+    }
+    header .logo {
+      display: flex;
+      height: 100%;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      padding-left: 20px;
+      padding-right: 20px;
+    }
+    header .logo span {
+      font-weight: bold;
+      margin-right: 8px;
+      padding-left: 4px;
+      padding-right: 4px;
+      font-size: 20px;
+      text-shadow: 2px 2px #324157;
+      background-color: #ce3939;
+    }
+    header .status {
+      margin-left: 20px;
+    }
+    header .status span {
+      color: #bfcbd9;
+      padding-left: 6px;
+      padding-right: 6px;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+    .proxies-nav {
+      margin-top: 14px;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+    }
+    .proxies-nav .search {
+      max-width: 300px;
+    }
+    .proxies-nav .checkbox-first {
+      margin-left: 15px;  /* as margin for other checkboxes */
+    }
+    .proxies-nav .el-checkbox-group {
+      margin-right: 15px;
+    }
+    .proxies-nav .pagination {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .proxies-nav .total {
+      /*
+      background-color: #CC0033;
+      color: white;
+      font-weight: bold;
+      */
+      color: #48576a;
+      border: 1px solid #d1dbe5;
+      border-radius: 0 2px 2px 0;
+      text-align: center;
+      font-size: 13px;
+      height: 26px;
+      line-height: 26px;
+      padding-left: 6px;
+      padding-right: 6px;
+
+    }
+    #proxies {
+      font-size: 12px;
+    }
+    #proxies .cell {
+      padding-left: 8px;
+      padding-right: 8px;
+    }
+    #proxies .el-table__expanded-cell {
+      padding: 5px 50px;
+    }
+    #proxies .el-table__expanded-cell p {
+      margin: 4px;
+    }
+    footer {
+      padding-top: 12px;
+      font-size: 8px;
+      text-align: center;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <header>
+      <div class="logo"><span>&laquo;S&raquo;</span> SuperProxy</div>
+      <el-menu theme="dark" mode="horizontal" default-active="1">
+        <el-menu-item index="1">Proxies</el-menu-item>
+        <!--<el-menu-item index="2">Status</el-menu-item>-->
+      </el-menu>
+      <div class="status">
+        <span><i class="el-icon-check green"></i> {{formatInt(active_proxies)}} </span>
+        <span><i class="el-icon-date yellow"></i> {{formatInt(rest_proxies)}} </span>
+        <span><i class="el-icon-close red"></i> {{formatInt(blacklist_proxies)}} </span>
+        <span><i class="el-icon-upload green"></i> {{formatInt(in_use)}} </span>
+        <span><i class="el-icon-time yellow"></i> {{formatInt(waiting)}} </span>
+      </div>
+    </header>
+    <main>
+      <div class="proxies-nav">
+        <el-input class="search" placeholder="example: 'HTTP+UA hidester+:8080'" icon="search"
+          v-model="search"
+          @input="proxiesUpdate"
+          >
+        </el-input>
+
+        <div class="status">
+          <el-checkbox-group v-model="status" :min="1" @input="proxiesUpdate">
+            <el-checkbox class="checkbox-first" label="active">active</el-checkbox>
+            <el-checkbox label="rest">rest</el-checkbox>
+            <el-checkbox label="blacklist">blacklist</el-checkbox>
+          </el-checkbox-group>
+        </div>
+
+        <div class="pagination" v-if="proxies">
+          <el-pagination
+             @size-change="proxiesUpdate"
+             @current-change="proxiesUpdate"
+             :current-page.sync="page"
+             :page-size="per_page"
+             layout="prev, pager, next"
+             :total="total">
+          </el-pagination>
+          <span class="total"> {{formatInt(total)}} </span>
+        </div>
+      </div>
+      <el-table stripe border id="proxies" :data="proxies"
+        :default-sort="{prop: 'used_at', order: 'descending'}" @sort-change="sortChange"
+        >
+        <el-table-column type="expand">
+          <template scope="{row}">
+            <p>
+              Success at: {{formatTime(row.success_at)}}
+              ({{ (row.success_at && row.success_at > row.fetched_at) ? 'checked' : 'unchecked' }})
+            </p>
+            <p>Fail at: {{formatTime(row.fail_at)}} [{{row.fail}}]</p>
+            <p>Rest till: {{formatTime(row.rest_till)}}</p>
+            <p>Fetch at: {{formatTime(row.fetch_at)}} [{{row.fetch_sources.join(' ')}}]</p>
+          </template>
+        </el-table-column>
+        <el-table-column label="Addr" prop="addr">
+          <template scope="{row}">
+            <span :class="{active: 'green', rest: 'yellow', blacklist: 'red'}[row.status]">
+              {{row.addr}}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="Types" width="120px"
+          :formatter="(p) => p.types.join(' ')">
+        </el-table-column>
+        <el-table-column label="Country" prop="country" width="75px">
+        </el-table-column>
+        <el-table-column label="Speed" prop="speed" sortable="custom">
+        </el-table-column>
+        <el-table-column label="Used time" prop="used_at" sortable="custom">
+          <template scope="{row}">
+            <span v-if="row.fail_at && (!row.success_at || row.fail_at > row.success_at)"
+              class="red">
+              {{row.fail_at.fromNow()}} [{{row.fail}}]
+            </span>
+            <span v-else :class="{green: row.success_at && row.success_at > row.fetched_at}">
+              {{row.success_at && row.success_at.fromNow()}}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="Fetch Sources"
+          :formatter="(p) => p.fetch_sources.join(' ')">
+        </el-table-column>
+      </el-table>
+    </main>
+    <footer>
+      <div>If you can read this you surely don't need glasses (or you have large monitor and small penis)</div>
+    </footer>
+  </div>
+
+  <script src="//unpkg.com/vue@2.4.4/dist/vue.js"></script>
+  <script src="//unpkg.com/element-ui@1.4.6/lib/index.js"></script>
+  <script src="//unpkg.com/element-ui@1.4.6/lib/umd/locale/en.js"></script>
+  <script src="//unpkg.com/moment@2.18.1/min/moment.min.js"></script>
+  <script>
+    var supportsES6 = function () {
+      try {
+        new Function("(a = 0) => a");
+        return true;
+      }
+      catch (err) {
+        return false;
+      }
+    }();
+    if (!supportsES6 || !window.fetch) {
+      var youSucks = 'Your browser doesn\'t support ES2015 or Fetch API. You sucks! Go away!';
+      document.body.innerHTML = youSucks;
+      throw new Error(youSucks);
+    };
+  </script>
+  <script>
+    ELEMENT.locale(ELEMENT.lang.en)
+    moment.relativeTimeThreshold('ss', 0)
+    new Vue({
+      el: '#app',
+      data () {
+        return {
+          active_proxies: null,
+          blacklist_proxies: null,
+          rest_proxies: null,
+          in_use: null,
+          waiting: null,
+          total: null,
+          proxies: null,
+
+          status: ['active', 'rest', 'blacklist'],
+          search: '',
+          sort: '-used_at',
+          page: 1,
+          per_page: 50,
+        }
+      },
+      created () {
+        this.statusUpdate()
+        this.proxiesUpdate()
+      },
+
+      methods: {
+        proxiesUpdate () {
+          const qs = (`status=${this.status.join(',')}` +
+                      `&search=${encodeURIComponent(this.search)}` +
+                      `&sort=${this.sort}` +
+                      `&page=${this.page}&per_page=${this.per_page}`)
+          this.fetch('/proxies?' + qs, {method: 'GET'}).then(data => {
+            now = moment.utc()
+            data.proxies.forEach(p => {
+              ['rest_till', 'success_at', 'fail_at', 'fetch_at'].forEach(k => {
+                if (p[k]) p[k] = moment.utc(p[k]).local()
+              })
+              p.types.sort()
+              p.fetch_sources.sort()
+              if (p.blacklist) p.status = 'blacklist'
+              else if (p.rest_till && p.rest_till > now) p.status = 'rest'
+              else p.status = 'active'
+            })
+            this.proxies = data.proxies
+            this.total = data.total
+          })
+        },
+
+        statusUpdate () {
+          this.fetch('/status', {method: 'GET'}).then(data => {
+            for (let key of Object.keys(data)) {
+              this.$data[key] = data[key]
+            }
+          })
+        },
+
+        fetch(url, params) {
+          return window.fetch(url, params).then(resp => {
+            if (resp.status != 200) {
+              this.error(`${url} fetch error: ${resp.status} ${resp.statusText}`)
+            } else {
+              return resp.json().catch(error => {
+                this.error(`${url} JSON decode error: ${error}`)
+              })
+            }
+          })
+        },
+
+        error (message) {
+          this.$notify.error({title: 'Error', duration: 0, message})
+          throw new Error(message)
+        },
+
+        sortChange ({prop, order}) {
+          this.sort = order ?  ((order == 'descending' ? '-' : '') + prop) : ''
+          this.page = 1
+          this.proxiesUpdate()
+        },
+
+        formatTime (val) {
+          if (val) return `${val.format('YYYY-MM-DD HH:mm:ss')} (${val.fromNow()})`
+        },
+
+        formatInt (val) {
+          return val ? val.toLocaleString() : val
+        }
+      },
+    })
+  </script>
+</body>
+</html>
