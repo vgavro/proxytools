@@ -163,7 +163,7 @@
           <template scope="{row}">
             <p>
               Success at: {{formatTime(row.success_at)}}
-              ({{ (row.success_at && row.success_at > row.fetched_at) ? 'checked' : 'unchecked' }})
+              ({{ (row.success_at && row.success_at > row.fetch_at) ? 'checked' : 'unchecked' }})
             </p>
             <p>Fail at: {{formatTime(row.fail_at)}} [{{row.fail}}]</p>
             <p>Rest till: {{formatTime(row.rest_till)}}</p>
@@ -190,7 +190,7 @@
               class="red">
               {{row.fail_at.fromNow()}} [{{row.fail}}]
             </span>
-            <span v-else :class="{green: row.success_at && row.success_at > row.fetched_at}">
+            <span v-else :class="{green: row.success_at && row.success_at > row.fetch_at}">
               {{row.success_at && row.success_at.fromNow()}}
             </span>
           </template>

@@ -111,11 +111,17 @@ class ProxyList:
                                now - self.fetcher.started_at, self._stats_str)
 
     def proxy(self, proxy, load=False):
-        if proxy.addr in self.blacklist_proxies or proxy.blacklist:
+        if proxy.addr in self.blacklist_proxies:
             self.blacklist_proxies[proxy.addr].merge_meta(proxy)
 
         elif proxy.addr in self.active_proxies:
-            self.active_proxies[proxy.addr].merge_meta(proxy)
+            if proxy.blacklist:
+                self.blacklist(proxy)
+            else:
+                self.active_proxies[proxy.addr].merge_meta(proxy)
+
+        elif proxy.blacklist:
+            self.blacklist_proxies[proxy.addr] = proxy
 
         elif not load and proxy.fail_at and proxy.fail_at > proxy.success_at:
             # called after proxy checking and it was failed

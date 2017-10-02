@@ -130,14 +130,14 @@ class WSGISuperProxy:
                 iterable = chain(iterable, self.proxylist.blacklist_proxies.values())
             proxies = []
             for p in iterable:
-                if p.blacklist and 'blacklist' not in status:
-                    continue
-                if p.rest_till and p.rest_till > now:
+                if p.blacklist:
+                    if 'blacklist' not in status:
+                        continue
+                elif p.rest_till and p.rest_till > now:
                     if 'rest' not in status:
                         continue
-                else:
-                    if 'active' not in status:
-                        continue
+                elif 'active' not in status:
+                    continue
                 if (not search or any(all(_match_proxy_search_token(p, token)
                                           for token in token_group)
                                       for token_group in search)):
