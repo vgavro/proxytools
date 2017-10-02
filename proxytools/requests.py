@@ -10,7 +10,7 @@ from requests.utils import select_proxy, urldefragauth
 from gevent import Timeout, sleep
 
 from .proxylist import ProxyMaxRetriesExceeded, InsufficientProxiesError
-from .superproxy import SUPERPROXY_HEADERS
+from .superproxy import SUPERPROXY_REQUEST_HEADERS
 from .utils import repr_response, get_random_user_agent
 
 
@@ -303,13 +303,15 @@ class SuperProxySession(ConfigurableSession):
         proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs)
                         if k.startswith('proxy_')}
         for key, value in proxy_kwargs.items():
+            if key in ['proxy_timeout', 'proxy_allow_no_proxy']:
+                key = key[6:]
             headers['X-Superproxy-' + key.replace('_', '-').title()] = \
-                SUPERPROXY_HEADERS[key][1](value)
+                SUPERPROXY_REQUEST_HEADERS[key][1](value)
 
         resp = super().request(method, url, headers=headers, **kwargs)
 
         if persist:
-            self._persist_addr = resp.headers.get('X-Superproxy-Addr')
+            self._persist_addr = resp.headers.get('X-Superproxy-Addr') or None
 
         return resp
 

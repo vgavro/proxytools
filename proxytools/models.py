@@ -29,11 +29,12 @@ class Proxy:
     ANONYMITY = ANONYMITY
 
     __slots__ = ('addr types anonymity country speed fetch_at fetch_sources '
-                 'success_at fail_at fail in_use rest_till').split()
+                 'success_at fail_at fail in_use rest_till blacklist history').split()
 
     def __init__(self, addr, types, anonymity=None, country=None, speed=None,
                  fetch_at=None, fetch_sources=None,
-                 success_at=None, fail_at=None, fail=0, in_use=0, rest_till=None):
+                 success_at=None, fail_at=None, fail=0, in_use=0, rest_till=None,
+                 blacklist=False, history=None):
 
         types = set(str_to_enum(t, TYPE) for t in types)
         if types.intersection(SOCKS_TYPES):
@@ -45,11 +46,11 @@ class Proxy:
             anonymity = anonymity and str_to_enum(anonymity, ANONYMITY) or None
 
         (self.addr, self.types, self.anonymity, self.country, self.speed,
-         self.fetch_at, self.fetch_sources,
-         self.success_at, self.fail_at, self.fail, self.in_use, self.rest_till) = \
+         self.fetch_at, self.fetch_sources, self.success_at, self.fail_at,
+         self.fail, self.in_use, self.rest_till, self.blacklist, self.history) = \
             (addr, set(types), anonymity, country, speed,
              fetch_at, fetch_sources and set(fetch_sources) or set(),
-             success_at, fail_at, fail, in_use, rest_till)
+             success_at, fail_at, fail, in_use, rest_till, blacklist, history)
 
     def __hash__(self):
         return self.addr
@@ -121,6 +122,9 @@ class Proxy:
             ('fail_at', self.fail_at and to_isoformat(self.fail_at)),
             ('fail', self.fail),
             ('rest_till', self.rest_till and to_isoformat(self.rest_till)),
+            ('blacklist', self.blacklist),
+            ('history', self.history and [(to_isoformat(h[0]), *h[1:])
+                                          for h in self.history] or None),
         ))
 
     @classmethod
@@ -135,6 +139,9 @@ class Proxy:
                 data[key] = ANONYMITY[value.upper()]
             elif key == 'types':
                 data[key] = set(TYPE[type_.upper()] for type_ in value)
+            elif value and key == 'history':
+                data[key] = [(from_isoformat(h[0]), *h[1:]) for h in value]
+
         return cls(**data)
 
 #    def to_csv(self):

@@ -1,4 +1,5 @@
 import logging
+import io
 import json
 import enum
 import random
@@ -190,6 +191,14 @@ class JSONEncoder(json.JSONEncoder):
         else:
             for chunk in iterator:
                 fp.write(chunk)
+
+    def dumps(self, obj):
+        buf = io.StringIO()
+        try:
+            self.dump(obj, buf)
+            return buf.getvalue()
+        finally:
+            buf.close()
 
 
 def str_to_enum(value, enum_cls):

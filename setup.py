@@ -49,6 +49,8 @@ setup(
     keywords='',
     packages=find_packages(),
     install_requires=requires,
+    package_data={'': ['proxytools/superproxy.html']},
+    include_package_data=True,
     entry_points={
         'console_scripts': [
             'proxyfetcher=proxytools.cli:fetcher',
