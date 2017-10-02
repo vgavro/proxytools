@@ -18,6 +18,7 @@ class ProxyFetcher(AbstractProxyProcessor):
         super().__init__(proxy, pool, pool_size)
         # TODO: implement stop on limit!
 
+        self.started_at = None
         if isinstance(checker, dict):
             checker = ProxyChecker(**checker)
         self.checker = checker
@@ -50,6 +51,7 @@ class ProxyFetcher(AbstractProxyProcessor):
             self.fetchers.append(fetcher)
 
     def __call__(self, join=False):
+        self.started_at = datetime.utcnow()
         for fetcher in self.fetchers:
             fetcher()
         if join:

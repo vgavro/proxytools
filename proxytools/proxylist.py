@@ -32,7 +32,7 @@ class ProxyMaxRetriesExceeded(RuntimeError):
 
 class ProxyList:
     def __init__(self, fetcher=None, min_size=50, max_fail=3, max_simultaneous=2,
-                 success_timeout=0, fail_timeout=0, update_on=None,
+                 success_timeout=0, fail_timeout=0, update_on=None, update_timeout=10 * 60,
                  filename=None, atexit_save=False, json_encoder={}):
         if min_size <= 0:
             raise ValueError('min_size must be positive')
@@ -51,6 +51,11 @@ class ProxyList:
 
         # Dictionary to use shared connection pools between sessions
         self.proxy_pool_manager = {}
+
+        self.update_timeout = timedelta(seconds=update_timeout)
+        if isinstance(update_on, str):
+            update_on = import_string(update_on)
+        self.update_on = update_on
 
         if isinstance(fetcher, dict):
             fetcher = ProxyFetcher(proxylist=self, **fetcher)
@@ -79,10 +84,6 @@ class ProxyList:
             logger.info('Start fetch %s', self._stats_str)
             fetcher()
 
-        if isinstance(update_on, str):
-            update_on = import_string(update_on)
-        self.update_on = update_on
-
     @property
     def need_update(self):
         return (len(self.active_proxies) < self.min_size or
@@ -100,8 +101,14 @@ class ProxyList:
             raise InsufficientProxiesError('Insufficient proxies {}'
                                            .format(self._stats_str))
         if self.fetcher and self.fetcher.ready and self.need_update:
-            logger.info('Start fetch %s', self._stats_str)
-            self.fetcher()
+            now = datetime.utcnow()
+            if (self.fetcher.started_at is None or
+               (self.fetcher.started_at + self.update_timeout) <= now):
+                logger.info('Start fetch %s', self._stats_str)
+                self.fetcher()
+            else:
+                logger.warning('Update needed, but timeout not expired (%s), %s',
+                               now - self.fetcher.started_at, self._stats_str)
 
     def proxy(self, proxy):
         if proxy.addr in self.active_proxies:
