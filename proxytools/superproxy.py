@@ -39,6 +39,7 @@ SUPERPROXY_REQUEST_HEADERS = {
                             lambda x: x._to_superproxy_header()),
     'proxy_rest_timeout': (int, str),
     'proxy_fail_timeout': (int, str),
+    'proxy_request_ident': (str, str),
 }
 
 _EPOCH_START = datetime(1970, 1, 1)

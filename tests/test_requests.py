@@ -5,7 +5,7 @@ from gevent.pool import Pool
 from proxytools.proxylist import ProxyList
 from proxytools.proxychecker import ProxyChecker
 from proxytools.proxyfetcher import ProxyFetcher
-from proxytools.requests import ProxyListSession
+from proxytools.requests import ProxyListSession, SuperProxySession
 
 
 def test_proxylist_session():
@@ -25,4 +25,20 @@ def test_proxylist_session():
     pool = Pool(5)
 
     [pool.spawn(worker, x) for x in range(20)]
+    pool.join()
+
+
+def test_superproxy_session():
+    session = SuperProxySession('http://localhost:8088')
+
+    def worker(x):
+        print('Fetch start', x)
+        resp = session.get('https://httpbin.org/get')
+        # assert 'origin' in resp.json(), resp.json()
+        print(resp.headers)
+        # except Exception as exc:
+        #     print('Fetch failed', x, time.time() - started, repr(exc))
+    pool = Pool(5)
+
+    [pool.spawn(worker, x) for x in range(2)]
     pool.join()

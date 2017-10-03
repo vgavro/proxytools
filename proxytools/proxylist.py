@@ -32,8 +32,8 @@ class ProxyMaxRetriesExceeded(RuntimeError):
 
 class ProxyList:
     def __init__(self, fetcher=None, min_size=50, max_fail=3, max_simultaneous=2,
-                 success_timeout=0, fail_timeout=0, update_on=None, update_timeout=10 * 60,
-                 filename=None, atexit_save=False, json_encoder={}):
+                 success_timeout=0, fail_timeout=0, history=0, update_on=None,
+                 update_timeout=10 * 60, filename=None, atexit_save=False, json_encoder={}):
         if min_size <= 0:
             raise ValueError('min_size must be positive')
         self.min_size = min_size
@@ -41,6 +41,7 @@ class ProxyList:
         self.max_simultaneous = max_simultaneous
         self.success_timeout = success_timeout
         self.fail_timeout = fail_timeout
+        self.history = history
 
         # Event is set each time proxy is added or released
         self.proxy_ready = Event()
@@ -133,15 +134,18 @@ class ProxyList:
 
     def fail(self, proxy, exc=None, resp=None, timeout=None):
         if exc:
-            reason = ' exception: {!r}'.format(exc)
+            reason = 'exception: {!r}'.format(exc)
         elif resp:
-            reason = ' response not matched: {}'.format(repr_response(resp))
+            reason = 'response not matched: {}'.format(repr_response(resp))
         else:
-            reason = ''
-        logger.debug('Failed: %s%s %s', proxy.addr, reason, self._stats_str)
+            reason = None
+        logger.debug('Failed: %s %s %s', proxy.addr, reason, self._stats_str)
         proxy.fail_at = datetime.utcnow()
         proxy.fail += 1
         proxy.in_use -= 1
+        if self.history:
+            proxy.history = ((proxy.history or []) +
+                             [[proxy.fail_at, 'fail', reason]])[-self.history:]
         assert proxy.in_use >= 0
         if proxy.addr in self.active_proxies:
             if proxy.fail >= self.max_fail:
@@ -171,6 +175,9 @@ class ProxyList:
         proxy.fail_at = None
         proxy.fail = 0
         proxy.in_use -= 1
+        if self.history:
+            proxy.history = ((proxy.history or []) +
+                             [[proxy.success_at, 'success', None]])[-self.history:]
         assert proxy.in_use >= 0
         timeout = self.success_timeout if timeout is None else timeout
         if timeout:
@@ -183,11 +190,15 @@ class ProxyList:
     def rest(self, proxy, timeout, resp=None):
         proxy.in_use -= 1
         assert proxy.in_use >= 0
-        rest_till = datetime.utcnow() + timedelta(seconds=timeout)
+        now = datetime.utcnow()
+        rest_till = now + timedelta(seconds=timeout)
         if not proxy.rest_till or proxy.rest_till < rest_till:
             proxy.rest_till = rest_till
-        reason = resp and ' response: {}'.format(repr_response(resp)) or ''
-        logger.debug('Rest: %s%s till %s %s', proxy.addr, reason, proxy.rest_till, self._stats_str)
+        reason = resp and 'response: {}'.format(repr_response(resp)) or None
+        if self.history:
+            proxy.history = ((proxy.history or []) +
+                             [[now, 'rest', reason]])[-self.history:]
+        logger.debug('Rest: %s %s till %s %s', proxy.addr, reason, proxy.rest_till, self._stats_str)
 
     @property
     def in_use(self):
@@ -206,7 +217,7 @@ class ProxyList:
         }
 
     def get(self, strategy, exclude=[], persist=None, wait=True, countries=None,
-            countries_exclude=None):
+            countries_exclude=None, request_ident=None):
         if not callable(strategy):
             if isinstance(strategy, str):
                 strategy = getattr(self, GET_STRATEGY[strategy].value)
@@ -215,7 +226,7 @@ class ProxyList:
 
         self.maybe_update()
 
-        ident = get_ident()
+        ident = request_ident and (request_ident + '-' + str(get_ident())) or str(get_ident())
         while True:
             ready_proxies = self.get_ready_proxies(exclude, countries, countries_exclude)
             if ready_proxies:
