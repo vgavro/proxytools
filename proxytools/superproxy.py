@@ -90,7 +90,7 @@ class WSGISuperProxy:
             return self.resolve_proxy(environ, start_resp)
 
     def resolve_local(self, environ, start_resp):
-        if environ['PATH_INFO'] == '/':
+        if environ['PATH_INFO'] in ('/', '/superproxy'):
             return self.resp(start_resp, codes.FOUND, headers=[('Location', '/superproxy/')])
 
         elif environ['PATH_INFO'].startswith('/superproxy/'):

@@ -160,15 +160,15 @@
           <span><i class="el-icon-time yellow"></i> {{status.waiting | formatInt}} </span>
         </div>
       </el-tooltip>
-      <el-dropdown class="actions" @command="handleCommand">
+      <el-dropdown class="actions" @command="handleAction">
         <el-button type="primary" size="small">
           Actions<i class="el-icon-caret-bottom el-icon--right"></i>
         </el-button>
         <el-dropdown-menu slot="dropdown" class="dropdown-menu-small">
-          <el-dropdown-item command="fetch">Fetch proxies</el-dropdown-item>
-          <el-dropdown-item command="check">Re-check proxies</el-dropdown-item>
-          <el-dropdown-item command="add">Add proxies</el-dropdown-item>
-          <el-dropdown-item command="clearBlacklist">Clear blacklist</el-dropdown-item>
+          <el-dropdown-item :command="{action: 'fetch'}">Fetch proxies</el-dropdown-item>
+          <el-dropdown-item>Recheck proxies</el-dropdown-item>
+          <el-dropdown-item>Add proxies</el-dropdown-item>
+          <el-dropdown-item>Forget blacklist</el-dropdown-item>
         </el-dropdown-menu>
       </el-dropdown>
     </header>
@@ -214,14 +214,15 @@
         >
         <el-table-column type="expand">
           <template scope="{row}">
-            <el-dropdown class="proxy-actions">
+            <el-dropdown>
               <el-button type="primary" size="mini">
                 Actions<i class="el-icon-caret-bottom el-icon--right"></i>
               </el-button>
               <el-dropdown-menu slot="dropdown" class="dropdown-menu-mini">
-                <el-dropdown-item command="check">Re-check</el-dropdown-item>
-                <el-dropdown-item command="blacklist">Blacklist</el-dropdown-item>
-                <el-dropdown-item command="reset_rest">Reset rest</el-dropdown-item>
+                <el-dropdown-item>Recheck</el-dropdown-item>
+                <el-dropdown-item v-if="!row.blacklist">Blacklist</el-dropdown-item>
+                <el-dropdown-item v-if="row.blacklist">Unblacklist</el-dropdown-item>
+                <el-dropdown-item v-if="row.rest_till">Reset rest_till</el-dropdown-item>
               </el-dropdown-menu>
             </el-dropdown>
             <p>
@@ -539,18 +540,21 @@
           })
         },
 
-        handleCommand(command) {
-          if (command === 'fetch') {
+        handleAction (action) {
+          if (action && action.action === 'fetch') {
             this.$confirm('Are you sure you want to fetch proxies?').then(() => {
-              debugger
+              this.fetch('/action', {method: 'POST', body: action}).then(() => {
+                this.$notify.success('Success')
+              })
             })
           }
-          if (command === 'check') {
-            this.$prompt('Are you sure you want to re-check proxies? Enter delta (example: "1h" or "1h30m") of proxy used time (success or fail) to skip recently used proxies, or leave empty to re-check all.').then(delta => {
-              debugger
-            })
-          }
-          console.log('Command invoked', command)
+          // TODO implement actions
+          // else if (command === 'check') {
+          //   this.$prompt('Are you sure you want to re-check proxies? Enter delta (example: "1h" or "1h30m") of proxy used time (success or fail) to skip recently used proxies, or leave empty to re-check all.').then(delta => {
+          //     debugger
+          //   })
+          // }
+          // console.log('Command invoked', command)
         },
 
         fetch (url, params) {
@@ -565,7 +569,9 @@
             params.body = JSON.stringify(params.body)
           }
           return window.fetch(url, params).then(resp => {
-            if (resp.status != 200) {
+            if (resp.status === 422) {
+              return resp.text().then(this.error)
+            } else if (resp.status != 200) {
               this.error(`${url} fetch error: ${resp.status} ${resp.statusText}`)
             } else {
               return resp.json().catch(error => {
