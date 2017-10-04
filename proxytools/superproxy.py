@@ -2,9 +2,11 @@ import logging
 from datetime import datetime
 from urllib.parse import parse_qsl
 from itertools import chain
+import json
 
 from requests.status_codes import _codes, codes
 
+from .models import PROXY_RESULT_TYPE
 from .utils import ResponseMatch
 
 
@@ -89,6 +91,9 @@ class WSGISuperProxy:
 
     def resolve_local(self, environ, start_resp):
         if environ['PATH_INFO'] == '/':
+            return self.resp(start_resp, codes.FOUND, headers=[('Location', '/superproxy/')])
+
+        elif environ['PATH_INFO'].startswith('/superproxy/'):
             # TODO: dirty hack, and only for debug, cache it later and replace only extension
             resp = open(__file__.replace('.py', '.html')).read()
             return self.resp(start_resp, codes.OK, resp, content_type='text/html')
@@ -103,12 +108,18 @@ class WSGISuperProxy:
                     active += 1
                 in_use += p.in_use
 
+            fetcher = self.proxylist.fetcher
             resp = self.proxylist.json_encoder.dumps({
-                'rest_proxies': rest,
-                'active_proxies': active,
-                'blacklist_proxies': len(self.proxylist.blacklist_proxies),
+                'rest': rest,
+                'active': active,
+                'blacklist': len(self.proxylist.blacklist_proxies),
                 'in_use': in_use,
                 'waiting': len(self.proxylist.waiting),
+                'need_update': self.proxylist.need_update,
+                'fetcher': bool(fetcher),
+                'fetcher_checker': bool(fetcher and fetcher.checker),
+                'fetcher_started_at': fetcher and fetcher.started_at,
+                'fetcher_ready': fetcher and fetcher.ready,
             })
             return self.resp(start_resp, codes.OK, resp, content_type='application/json')
 
@@ -158,6 +169,53 @@ class WSGISuperProxy:
             })
             return self.resp(start_resp, codes.OK, resp, content_type='application/json')
 
+        elif environ['PATH_INFO'] == '/waiting':
+            resp = self.proxylist.json_encoder.dumps(self.proxylist.waiting)
+            return self.resp(start_resp, codes.OK, resp, content_type='application/json')
+
+        elif environ['PATH_INFO'] == '/history':
+            qs = dict(parse_qsl(environ.get('QUERY_STRING', '')))
+            result = [PROXY_RESULT_TYPE[result.upper()] for result
+                      in qs.get('result', '').split(',') or ('success', 'fail', 'rest')]
+            search = tuple(set(token for token in token_group.split('+') if token)
+                           for token_group in qs.get('search', '').split() if token_group)
+            per_page = int(qs.get('per_page', 50))
+            start = ((int(qs['page']) - 1) * per_page) if 'page' in qs else None
+
+            iterable = chain(self.proxylist.active_proxies.values(),
+                             self.proxylist.blacklist_proxies.values())
+            history = []
+            for p in iterable:
+                for h in (p.history or []):
+                    if (h[1] in result and  # result_type
+                        (not search or any(all((_match_proxy_search_token(p, token) or
+                                               (h[2] and token in h[2]) or  # reason
+                                               (h[3] and token in h[3]))  # request_ident
+                                               for token in token_group)
+                                           for token_group in search))):
+                        history.append(tuple(h) + (p.addr,))
+
+            history.sort(key=lambda h: h[0], reverse=True)
+            resp = self.proxylist.json_encoder.dumps({
+                'history': (history[start: start + per_page]
+                            if start is not None else history),
+                'total': len(history),
+            })
+            return self.resp(start_resp, codes.OK, resp, content_type='application/json')
+
+        elif environ['PATH_INFO'] == '/action':
+            data = environ['wsgi.input'].read(int(environ['CONTENT_LENGTH']))
+            data = json.loads(data)
+            if data['action'] == 'fetch':
+                if self.proxylist.fetcher and self.proxylist.fetcher.ready:
+                    self.proxylist.fetcher()
+                else:
+                    return self.resp(start_resp, codes.UNPROCESSABLE, 'Fetcher not ready')
+            else:
+                return self.resp(start_resp, codes.UNPROCESSABLE, 'Unknown action')
+            return self.resp(start_resp, codes.OK, '{"status": "ok"}',
+                             content_type='application/json')
+
         else:
             return self.resp(start_resp, codes.NOT_FOUND,
                              'Not found: {}'.format(environ['PATH_INFO']))
@@ -201,6 +259,7 @@ class WSGISuperProxy:
             resp = self.session.request(method, url, data=data, headers=headers, **kwargs)
         except BaseException as exc:
             logger.error('%r', exc)
+            # logger.exception('%r', exc)
             return self.resp(start_resp, codes.INTERNAL_SERVER_ERROR, repr(exc))
 
         headers = []

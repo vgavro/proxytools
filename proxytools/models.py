@@ -24,6 +24,13 @@ class ANONYMITY(enum.Enum):
     TRANSPARENT = 3
 
 
+class PROXY_RESULT_TYPE(enum.Enum):
+    # For Proxy.history
+    FAIL = 0
+    SUCCESS = 1
+    REST = 2
+
+
 class Proxy:
     TYPE = TYPE
     ANONYMITY = ANONYMITY
@@ -86,8 +93,15 @@ class Proxy:
     @property
     def is_checked(self):
         # is checked locally
-        # maybe other name for attribute
         return self.success_at and (not self.fetch_at or (self.fetch_at < self.success_at))
+
+    def set_rest_till(self, rest_till):
+        if not self.rest_till or self.rest_till < rest_till:
+            self.rest_till = rest_till
+
+    def set_history(self, time, result_type, reason, request_ident, max_history):
+        self.history = ([[time, result_type, reason, request_ident]] +
+                        (self.history or []))[:max_history]
 
     def merge_meta(self, proxy):
         # hidester not showing if proxy type also https, for example
@@ -123,7 +137,7 @@ class Proxy:
             ('fail', self.fail),
             ('rest_till', self.rest_till and to_isoformat(self.rest_till)),
             ('blacklist', self.blacklist),
-            ('history', self.history and [(to_isoformat(h[0]), *h[1:])
+            ('history', self.history and [(to_isoformat(h[0]), h[1].name, *h[2:])
                                           for h in self.history] or None),
         ))
 
@@ -140,7 +154,8 @@ class Proxy:
             elif key == 'types':
                 data[key] = set(TYPE[type_.upper()] for type_ in value)
             elif value and key == 'history':
-                data[key] = [(from_isoformat(h[0]), *h[1:]) for h in value]
+                data[key] = [(from_isoformat(h[0]), PROXY_RESULT_TYPE[h[1]], *h[2:])
+                             for h in value]
 
         return cls(**data)
 

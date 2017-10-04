@@ -10,7 +10,7 @@ from gevent import GreenletExit, Timeout, sleep
 from gevent.event import Event
 from gevent.thread import get_ident
 
-from .models import Proxy
+from .models import Proxy, PROXY_RESULT_TYPE
 from .proxyfetcher import ProxyFetcher
 from .utils import JSONEncoder, CompositeContains, repr_response, import_string
 
@@ -87,8 +87,8 @@ class ProxyList:
 
     @property
     def need_update(self):
-        return (len(self.active_proxies) < self.min_size or
-                (self.update_on and self.update_on(self)))
+        return bool(len(self.active_proxies) < self.min_size or
+                    (self.update_on and self.update_on(self)))
 
     @property
     def _stats_str(self):
@@ -132,30 +132,26 @@ class ProxyList:
             self.active_proxies[proxy.addr] = proxy
             self.proxy_ready.set()
 
-    def fail(self, proxy, exc=None, resp=None, timeout=None):
-        if exc:
-            reason = 'exception: {!r}'.format(exc)
-        elif resp:
-            reason = 'response not matched: {}'.format(repr_response(resp))
-        else:
-            reason = None
-        logger.debug('Failed: %s %s %s', proxy.addr, reason, self._stats_str)
+    def fail(self, proxy, timeout=None, exc=None, resp=None, request_ident=None):
         proxy.fail_at = datetime.utcnow()
         proxy.fail += 1
         proxy.in_use -= 1
-        if self.history:
-            proxy.history = ((proxy.history or []) +
-                             [[proxy.fail_at, 'fail', reason]])[-self.history:]
         assert proxy.in_use >= 0
+        reason = (exc and repr(exc)) or (resp and repr_response(resp))
+        if self.history:
+            proxy.set_history(proxy.fail_at, PROXY_RESULT_TYPE.FAIL, reason,
+                              request_ident, self.history)
+
+        logger.debug('Failed: %s%s%s %s', proxy.addr,
+                     request_ident and ' ' + request_ident or '',
+                     reason and ' ' + reason or '', self._stats_str)
         if proxy.addr in self.active_proxies:
             if proxy.fail >= self.max_fail:
                 self.blacklist(proxy)
             else:
                 timeout = self.fail_timeout if timeout is None else timeout
                 if timeout:
-                    rest_till = proxy.fail_at + timedelta(seconds=timeout)
-                    if not proxy.rest_till or proxy.rest_till < rest_till:
-                        proxy.rest_till = rest_till
+                    proxy.set_rest_till(proxy.fail_at + timedelta(seconds=timeout))
                 self.proxy_ready.set()  # TODO: consider rest_till?
                 sleep(0)  # switch to other greenlet for fair play
 
@@ -170,35 +166,33 @@ class ProxyList:
         logger.debug('Blacklist: %s %s', proxy.addr, self._stats_str)
         self.maybe_update()
 
-    def success(self, proxy, timeout=None):
+    def success(self, proxy, timeout=None, resp=None, request_ident=None):
         proxy.success_at = datetime.utcnow()
-        proxy.fail_at = None
         proxy.fail = 0
         proxy.in_use -= 1
-        if self.history:
-            proxy.history = ((proxy.history or []) +
-                             [[proxy.success_at, 'success', None]])[-self.history:]
         assert proxy.in_use >= 0
         timeout = self.success_timeout if timeout is None else timeout
         if timeout:
-            rest_till = proxy.success_at + timedelta(seconds=timeout)
-            if not proxy.rest_till or proxy.rest_till < rest_till:
-                proxy.rest_till = rest_till
+            proxy.set_rest_till(proxy.success_at + timedelta(seconds=timeout))
+        if self.history:
+            proxy.set_history(proxy.success_at, PROXY_RESULT_TYPE.SUCCESS,
+                              resp and repr_response(resp),
+                              request_ident, self.history)
         self.proxy_ready.set()  # TODO: consider rest_till?
         sleep(0)  # switch to other greenlet for fair play
 
-    def rest(self, proxy, timeout, resp=None):
+    def rest(self, proxy, timeout, resp=None, request_ident=None):
         proxy.in_use -= 1
         assert proxy.in_use >= 0
         now = datetime.utcnow()
-        rest_till = now + timedelta(seconds=timeout)
-        if not proxy.rest_till or proxy.rest_till < rest_till:
-            proxy.rest_till = rest_till
-        reason = resp and 'response: {}'.format(repr_response(resp)) or None
+        proxy.set_rest_till(now + timedelta(seconds=timeout))
+        reason = resp and repr_response(resp)
         if self.history:
-            proxy.history = ((proxy.history or []) +
-                             [[now, 'rest', reason]])[-self.history:]
-        logger.debug('Rest: %s %s till %s %s', proxy.addr, reason, proxy.rest_till, self._stats_str)
+            proxy.set_history(now, PROXY_RESULT_TYPE.REST, reason,
+                              request_ident, self.history)
+        logger.debug('Rest: %s%s%s till %s %s', proxy.addr,
+                     request_ident and ' ' + request_ident or '',
+                     reason and ' ' + reason or '', proxy.rest_till, self._stats_str)
 
     @property
     def in_use(self):
@@ -216,8 +210,7 @@ class ProxyList:
             (not countries_exclude or p.country not in countries_exclude)
         }
 
-    def get(self, strategy, exclude=[], persist=None, wait=True, countries=None,
-            countries_exclude=None, request_ident=None):
+    def get(self, strategy, persist=None, wait=True, request_ident=None, **proxy_params):
         if not callable(strategy):
             if isinstance(strategy, str):
                 strategy = getattr(self, GET_STRATEGY[strategy].value)
@@ -226,9 +219,9 @@ class ProxyList:
 
         self.maybe_update()
 
-        ident = request_ident and (request_ident + '-' + str(get_ident())) or str(get_ident())
+        ident = get_ident()  # unique integer id for greenlet
         while True:
-            ready_proxies = self.get_ready_proxies(exclude, countries, countries_exclude)
+            ready_proxies = self.get_ready_proxies(**proxy_params)
             if ready_proxies:
                 break
             elif wait is False or ((not self.fetcher or self.fetcher.ready) and not self.in_use):
@@ -238,10 +231,11 @@ class ProxyList:
                 # logger.info('Wait proxy (thread %s) %s', ident, self._stats_str)
                 self.proxy_ready.clear()
                 if ident not in self.waiting:
-                    #TODO: maybe more stats here
-                    self.waiting[ident] = datetime.utcnow()
+                    # Storing extra data for superproxy monitoring
+                    self.waiting[ident] = dict(since=datetime.utcnow(),
+                        request_ident=request_ident, params=proxy_params)
                 elif (wait is not True and wait is not None and
-                     (datetime.utcnow() - self.waiting[ident]).total_seconds() > wait):
+                     (datetime.utcnow() - self.waiting[ident]['since']).total_seconds() > wait):
                     del self.waiting[ident]
                     raise Timeout(wait)
                 try:
@@ -252,10 +246,10 @@ class ProxyList:
             del self.waiting[ident]
 
         if persist:
-            persist = ready_proxies.get(persist, None)
-            if persist:
-                persist.in_use += 1
-                return persist
+            proxy = ready_proxies.get(persist, None)
+            if proxy:
+                proxy.in_use += 1
+                return proxy
         proxy = strategy(ready_proxies)
         if proxy:
             proxy.in_use += 1

@@ -17,7 +17,7 @@ def repr_response(resp, full=False):
     if not full and len(resp.content) > 128:
         content = '{}...{}b'.format(resp.content[:128], len(resp.content))
     else:
-        content = resp.response.content
+        content = resp.content
     if 300 <= resp.status_code < 400:
         content = resp.headers.get('Location')
     return '{} {} {}: {}'.format(resp.request.method, resp.status_code,

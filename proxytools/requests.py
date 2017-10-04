@@ -209,19 +209,19 @@ class ProxyListMixin:
                     # NOTE: no content validation if no proxy was used
                     return resp
                 if rest_response and rest_response(resp):
-                    self.proxylist.rest(proxy, rest_timeout)
+                    self.proxylist.rest(proxy, rest_timeout, resp=resp)
                     if persist is True:
                         self._persist_addr = None
                     exclude.append(proxy.addr)
                 elif not success_response or success_response(resp):
-                    self.proxylist.success(proxy, timeout=success_timeout)
+                    self.proxylist.success(proxy, timeout=success_timeout, resp=resp)
                     if persist is True:
                         self._persist_addr = proxy.addr
                     # NOTE: maybe remove it, test purpose only (also used in superproxy)
                     resp._proxy = proxy
                     return resp
                 else:
-                    self.proxylist.fail(proxy, resp=resp, timeout=fail_timeout)
+                    self.proxylist.fail(proxy, timeout=fail_timeout, resp=resp)
                     if persist is True:
                         self._persist_addr = None
                     exclude.append(proxy.addr)

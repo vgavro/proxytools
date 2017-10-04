@@ -51,35 +51,43 @@
       padding-right: 6px;
       font-size: 14px;
       white-space: nowrap;
+      cursor: help;
     }
-    .proxies-nav {
+    .status-tooltip p {
+      margin-top: 2px;
+      margin-bottom: 2px;
+    }
+    header .actions {
+      margin-left: 20px;
+    }
+    .table-nav {
       margin-top: 14px;
       margin-bottom: 14px;
+      min-height: 36px;
       display: flex;
       align-items: center;
       justify-content: flex-start;
     }
-    .proxies-nav .search {
+    .table-nav .el-radio-group {
+      margin-right: 15px;
+      margin-left: -15px;
+    }
+    .table-nav .search {
       max-width: 300px;
     }
-    .proxies-nav .checkbox-first {
+    .table-nav .checkbox-first {
       margin-left: 15px;  /* as margin for other checkboxes */
     }
-    .proxies-nav .el-checkbox-group {
+    .table-nav .el-checkbox-group {
       margin-right: 15px;
     }
-    .proxies-nav .pagination {
+    .table-nav .pagination {
       margin-left: auto;
       display: flex;
       align-items: center;
       justify-content: flex-end;
     }
-    .proxies-nav .total {
-      /*
-      background-color: #CC0033;
-      color: white;
-      font-weight: bold;
-      */
+    .table-nav .total {
       color: #48576a;
       border: 1px solid #d1dbe5;
       border-radius: 0 2px 2px 0;
@@ -89,20 +97,28 @@
       line-height: 26px;
       padding-left: 6px;
       padding-right: 6px;
-
     }
-    #proxies {
+    .el-table {
       font-size: 12px;
     }
-    #proxies .cell {
+    .el-table .cell {
       padding-left: 8px;
       padding-right: 8px;
     }
-    #proxies .el-table__expanded-cell {
-      padding: 5px 50px;
+    .el-table .el-table__expanded-cell {
+      padding: 5px 10px;
     }
-    #proxies .el-table__expanded-cell p {
+    .el-table .el-table__expanded-cell p {
       margin: 4px;
+    }
+    .el-table.inner-table td {
+      height: 32px;
+    }
+    .dropdown-menu-mini {
+      font-size: 12px;
+    }
+    .dropdown-menu-small {
+      font-size: 14px;
     }
     footer {
       padding-top: 12px;
@@ -116,20 +132,57 @@
   <div id="app" v-cloak>
     <header>
       <div class="logo"><span>&laquo;S&raquo;</span> SuperProxy</div>
-      <el-menu theme="dark" mode="horizontal" default-active="1">
-        <el-menu-item index="1">Proxies</el-menu-item>
-        <!--<el-menu-item index="2">Status</el-menu-item>-->
+      <el-menu theme="dark" mode="horizontal" :router="true" :default-active="$route.path">
+        <el-menu-item index="/">Proxies</el-menu-item>
+        <el-menu-item index="/requests">Requests</el-menu-item>
       </el-menu>
-      <div class="status">
-        <span><i class="el-icon-check green"></i> {{formatInt(active_proxies)}} </span>
-        <span><i class="el-icon-date yellow"></i> {{formatInt(rest_proxies)}} </span>
-        <span><i class="el-icon-close red"></i> {{formatInt(blacklist_proxies)}} </span>
-        <span><i class="el-icon-upload green"></i> {{formatInt(in_use)}} </span>
-        <span><i class="el-icon-time yellow"></i> {{formatInt(waiting)}} </span>
-      </div>
+      <el-tooltip>
+        <div slot="content" class="status-tooltip">
+          <p>
+            Active: {{status.active|formatInt}}, Rest: {{status.rest|formatInt}},
+             Blacklist: {{status.blacklist|formatInt}},
+             In use: {{status.in_use|formatInt}}, Waiting: {{status.waiting|formatInt}},
+          </p>
+          <p>
+            Need update: {{status.need_update}}, Fetcher: {{status.fetcher}},
+            Checker: {{status.fetcher_checker}},
+          </p>
+          <p>
+            Fetch started at: {{status.fetcher_started_at | formatTime}},
+            Fetch ready: {{status.fetcher_ready}}
+          </p>
+        </div>
+        <div class="status">
+          <span><i class="el-icon-check green"></i> {{status.active | formatInt}} </span>
+          <span><i class="el-icon-date yellow"></i> {{status.rest | formatInt}} </span>
+          <span><i class="el-icon-close red"></i> {{status.blacklist | formatInt}} </span>
+          <span><i class="el-icon-upload green"></i> {{status.in_use | formatInt}} </span>
+          <span><i class="el-icon-time yellow"></i> {{status.waiting | formatInt}} </span>
+        </div>
+      </el-tooltip>
+      <el-dropdown class="actions" @command="handleCommand">
+        <el-button type="primary" size="small">
+          Actions<i class="el-icon-caret-bottom el-icon--right"></i>
+        </el-button>
+        <el-dropdown-menu slot="dropdown" class="dropdown-menu-small">
+          <el-dropdown-item command="fetch">Fetch proxies</el-dropdown-item>
+          <el-dropdown-item command="check">Re-check proxies</el-dropdown-item>
+          <el-dropdown-item command="add">Add proxies</el-dropdown-item>
+          <el-dropdown-item command="clearBlacklist">Clear blacklist</el-dropdown-item>
+        </el-dropdown-menu>
+      </el-dropdown>
     </header>
     <main>
-      <div class="proxies-nav">
+      <router-view></router-view>
+    </main>
+    <footer>
+      <div>If you can read this you don't need glasses</div>
+    </footer>
+  </div>
+
+  <template id="proxies-component">
+    <div>
+      <div class="table-nav">
         <el-input class="search" placeholder="example: 'HTTP+UA hidester+:8080'" icon="search"
           v-model="search"
           @input="proxiesUpdate"
@@ -153,21 +206,52 @@
              layout="prev, pager, next"
              :total="total">
           </el-pagination>
-          <span class="total"> {{formatInt(total)}} </span>
+          <span class="total"> {{total | formatInt}} </span>
         </div>
       </div>
-      <el-table stripe border id="proxies" :data="proxies"
-        :default-sort="{prop: 'used_at', order: 'descending'}" @sort-change="sortChange"
+      <el-table stripe border :data="proxies"
+        :default-sort="sort" @sort-change="sortChange"
         >
         <el-table-column type="expand">
           <template scope="{row}">
+            <el-dropdown class="proxy-actions">
+              <el-button type="primary" size="mini">
+                Actions<i class="el-icon-caret-bottom el-icon--right"></i>
+              </el-button>
+              <el-dropdown-menu slot="dropdown" class="dropdown-menu-mini">
+                <el-dropdown-item command="check">Re-check</el-dropdown-item>
+                <el-dropdown-item command="blacklist">Blacklist</el-dropdown-item>
+                <el-dropdown-item command="reset_rest">Reset rest</el-dropdown-item>
+              </el-dropdown-menu>
+            </el-dropdown>
             <p>
-              Success at: {{formatTime(row.success_at)}}
-              ({{ (row.success_at && row.success_at > row.fetch_at) ? 'checked' : 'unchecked' }})
+              Success at: {{row.success_at | formatTime}}
+              [{{ (row.success_at && row.success_at > row.fetch_at) ? 'checked' : 'unchecked' }}]
             </p>
-            <p>Fail at: {{formatTime(row.fail_at)}} [{{row.fail}}]</p>
-            <p>Rest till: {{formatTime(row.rest_till)}}</p>
-            <p>Fetch at: {{formatTime(row.fetch_at)}} [{{row.fetch_sources.join(' ')}}]</p>
+            <p>Fail at: {{row.fail_at | formatTime}} [{{row.fail}}]</p>
+            <p>Rest till: {{row.rest_till | formatTime}}</p>
+            <p>Fetch at: {{row.fetch_at | formatTime}} [{{row.fetch_sources.join(' ')}}]</p>
+
+            <el-table :data="row.history" v-if="row.history" :show-header="false" class="inner-table">
+              <el-table-column width="86px">
+                <template scope="{row}">
+                  <el-tag :type="{FAIL: 'danger', SUCCESS: 'success', REST: 'warning'}[row.result]">
+                    {{row.result}}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column>
+                <template scope="{row}">
+                  {{row.time | formatTime}}
+                </template>
+              </el-table-column>
+              <el-table-column show-overflow-tooltip>
+                <template scope="{row}">
+                  {{row.request_ident}} {{row.reason}}
+                </template>
+              </el-table-column>
+            </el-table>
+
           </template>
         </el-table-column>
         <el-table-column label="Addr" prop="addr">
@@ -199,16 +283,73 @@
           :formatter="(p) => p.fetch_sources.join(' ')">
         </el-table-column>
       </el-table>
-    </main>
-    <footer>
-      <div>If you can read this you surely don't need glasses (or you have large monitor and small penis)</div>
-    </footer>
-  </div>
+    </div>
+  </template>
 
+  <template id="requests-component">
+    <div>
+      <div class="table-nav">
+        <el-radio-group v-model="type"
+          @input="(val) => val === 'history' ? historyUpdate() : waitingUpdate()"
+          >
+          <el-radio label="history" class="checkbox-first">history</el-radio>
+          <el-radio label="waiting">waiting</el-radio>
+        </el-radio-group>
+        <el-input class="search" placeholder="example: 'HTTP+UA hidester+:8080'" icon="search"
+          v-if="type == 'history'" v-model="search" @input="historyUpdate"
+          >
+        </el-input>
+        <div class="status" v-if="type == 'history'">
+          <el-checkbox-group v-model="result" :min="1" @input="historyUpdate">
+            <el-checkbox class="checkbox-first" label="success">success</el-checkbox>
+            <el-checkbox label="fail">fail</el-checkbox>
+            <el-checkbox label="rest">rest</el-checkbox>
+          </el-checkbox-group>
+        </div>
+        <div class="pagination" v-if="type == 'history' && history">
+          <el-pagination
+             @size-change="historyUpdate"
+             @current-change="historyUpdate"
+             :current-page.sync="page"
+             :page-size="per_page"
+             layout="prev, pager, next"
+             :total="total">
+          </el-pagination>
+        </div>
+      </div>
+      <el-table stripe border :data="history" v-show="type === 'history'">
+        <el-table-column label="Result" prop="result" width="86px">
+          <template scope="{row}">
+            <el-tag :type="{FAIL: 'danger', SUCCESS: 'success', REST: 'warning'}[row.result]">{{row.result}}</el>
+          </template>
+        </el-table-column>
+        <el-table-column label="Time" prop="time" :formatter="(h) => h.time.fromNow()">
+        </el-table-column>
+        <el-table-column label="Reason" prop="reason" show-overflow-tooltip>
+        </el-table-column>
+        <el-table-column label="Request ident" prop="request_ident">
+        </el-table-column>
+        <el-table-column label="Addr" prop="addr">
+        </el-table-column>
+      </el-table>
+      <el-table stripe border :data="waiting"  v-show="type === 'waiting'">
+        <el-table-column label="Since" prop="since" :formatter="(w) => w.since.fromNow()">
+        </el-table-column>
+        <el-table-column label="Thread ident" prop="thread_ident">
+        </el-table-column>
+        <el-table-column label="Request ident" prop="request_ident">
+        </el-table-column>
+        <el-table-column label="Params" prop="params">
+        </el-table-column>
+      </el-table>
+    </div>
+  </template>
+
+  <script src="//unpkg.com/moment@2.18.1/min/moment.min.js"></script>
   <script src="//unpkg.com/vue@2.4.4/dist/vue.js"></script>
+  <script src="//unpkg.com/vue-router@2.7.0/dist/vue-router.js"></script>
   <script src="//unpkg.com/element-ui@1.4.6/lib/index.js"></script>
   <script src="//unpkg.com/element-ui@1.4.6/lib/umd/locale/en.js"></script>
-  <script src="//unpkg.com/moment@2.18.1/min/moment.min.js"></script>
   <script>
     var supportsES6 = function () {
       try {
@@ -228,42 +369,66 @@
   <script>
     ELEMENT.locale(ELEMENT.lang.en)
     moment.relativeTimeThreshold('ss', 0)
-    new Vue({
-      el: '#app',
+
+    function _parseProxyHistoryRecord (h) {
+      return {
+        time: moment.utc(h[0]).local(),
+        result: h[1],
+        reason: h[2],
+        request_ident: h[3],
+        addr: (h.length > 4) ? h[4] : null,
+      }
+    }
+
+    const ProxiesComponent = {
+      template: '#proxies-component',
+
       data () {
         return {
-          active_proxies: null,
-          blacklist_proxies: null,
-          rest_proxies: null,
-          in_use: null,
-          waiting: null,
-          total: null,
           proxies: null,
-
           status: ['active', 'rest', 'blacklist'],
           search: '',
-          sort: '-used_at',
+          sort: {prop: 'used_at', order: 'descending'},
           page: 1,
           per_page: 50,
+          total: null,
         }
       },
+
       created () {
-        this.statusUpdate()
-        this.proxiesUpdate()
+        const qs = this.$route.query
+        if (qs.status) this.status = qs.status.split(',')
+        if (qs.search) this.search = decodeURIComponent(qs.search)
+        if (qs.page) this.page = parseInt(qs.page)
+        if (qs.per_page) this.per_page = parseInt(qs.per_page)
+        if (qs.sort) {
+          if (qs.sort[0] === '-') {
+            this.sort = {prop: qs.sort.substr(1), order: 'descending'}
+          } else {
+            this.sort = {prop: qs.sort, order: 'ascending'}
+          }
+        }
+        // update will be initialized with this.sortChange on el-table initialization
       },
 
       methods: {
         proxiesUpdate () {
-          const qs = (`status=${this.status.join(',')}` +
-                      `&search=${encodeURIComponent(this.search)}` +
-                      `&sort=${this.sort}` +
-                      `&page=${this.page}&per_page=${this.per_page}`)
-          this.fetch('/proxies?' + qs, {method: 'GET'}).then(data => {
+          const qs = {
+            status: this.status.join(','),
+            search: encodeURIComponent(this.search),
+            sort: (this.sort.order ?
+                   ((this.sort.order == 'descending' ? '-' : '') + this.sort.prop) : ''),
+            page: this.page,
+            per_page: this.per_page,
+          }
+          this.$router.push({query: qs})
+          this.$root.fetch('/proxies', {method: 'GET', qs}).then(data => {
             now = moment.utc()
             data.proxies.forEach(p => {
               ['rest_till', 'success_at', 'fail_at', 'fetch_at'].forEach(k => {
                 if (p[k]) p[k] = moment.utc(p[k]).local()
               })
+              if (p.history) p.history = p.history.map(_parseProxyHistoryRecord)
               p.types.sort()
               p.fetch_sources.sort()
               if (p.blacklist) p.status = 'blacklist'
@@ -275,15 +440,130 @@
           })
         },
 
-        statusUpdate () {
-          this.fetch('/status', {method: 'GET'}).then(data => {
-            for (let key of Object.keys(data)) {
-              this.$data[key] = data[key]
-            }
+        sortChange ({prop, order}) {
+          this.sort = {prop, order}
+          this.page = 1
+          this.proxiesUpdate()
+        },
+      },
+    }
+
+    const RequestsComponent = {
+      template: '#requests-component',
+
+      data () {
+        return {
+          history: null,
+          waiting: null,
+          type: 'history',
+          search: '',
+          result: ['success', 'fail', 'rest'],
+          page: 1,
+          per_page: 50,
+          total: null,
+        }
+      },
+
+      created () {
+        const qs = this.$route.query
+        if (qs.type) this.type = qs.type
+        if (this.type === 'history') {
+          if (qs.search) this.search = decodeURIComponent(qs.search)
+          if (qs.page) this.page = parseInt(qs.page)
+          if (qs.per_page) this.per_page = parseInt(qs.per_page)
+          this.historyUpdate()
+        } else this.waitingUpdate()
+      },
+
+      methods: {
+        historyUpdate () {
+          const qs = {
+            result: this.result.join(','),
+            search: encodeURIComponent(this.search),
+            page: this.page,
+            per_page: this.per_page,
+          }
+          this.$router.push({query: Object.assign({type: 'history'}, qs)})
+          this.$root.fetch('/history', {method: 'GET', qs}).then(data => {
+            this.history = data.history.map(_parseProxyHistoryRecord)
+            this.total = data.total
           })
         },
 
-        fetch(url, params) {
+        waitingUpdate () {
+          this.$router.push({query: {type: 'waiting'}})
+          this.$root.fetch('/waiting', {method: 'GET'}).then(data => {
+            this.waiting = Object.keys(data).map(key => {
+              return Object.assign(data[key], {
+                thread_ident: key,
+                since: moment.utc(data[key].since).local(),
+                params: JSON.stringify(data[key].params),
+              })
+            })
+          })
+        }
+      },
+    }
+
+    Vue.filter('formatTime', v => v ? `${v.format()} (${v.fromNow()})` : '')
+    Vue.filter('formatInt', v => v ? v.toLocaleString() : v)
+    new Vue({
+      el: '#app',
+      router: new VueRouter({
+        mode: 'history',
+        base: '/superproxy/',
+        routes: [
+          {path: '/', component: ProxiesComponent},
+          {path: '/requests', component: RequestsComponent},
+          {path: '*', redirect: '/'},
+        ],
+      }),
+
+      data () {
+        return {
+          status: {},
+        }
+      },
+
+      created () {
+        this.statusUpdate()
+      },
+
+      methods: {
+        statusUpdate () {
+          this.fetch('/status', {method: 'GET'}).then(data => {
+            if (data.fetcher_started_at) {
+              data.fetcher_started_at = moment.utc(data.fetcher_started_at).local()
+            }
+            this.status = data
+          })
+        },
+
+        handleCommand(command) {
+          if (command === 'fetch') {
+            this.$confirm('Are you sure you want to fetch proxies?').then(() => {
+              debugger
+            })
+          }
+          if (command === 'check') {
+            this.$prompt('Are you sure you want to re-check proxies? Enter delta (example: "1h" or "1h30m") of proxy used time (success or fail) to skip recently used proxies, or leave empty to re-check all.').then(delta => {
+              debugger
+            })
+          }
+          console.log('Command invoked', command)
+        },
+
+        fetch (url, params) {
+          if (params.qs) {
+            url += '?' + (Object.keys(params.qs)
+                          .map(k => `${k}=${params.qs[k]}`)
+                          .join('&'))
+            delete params.qs
+          }
+          if (params.body) {
+            params.headers = {'Content-Type': 'application/json'}
+            params.body = JSON.stringify(params.body)
+          }
           return window.fetch(url, params).then(resp => {
             if (resp.status != 200) {
               this.error(`${url} fetch error: ${resp.status} ${resp.statusText}`)
@@ -299,20 +579,6 @@
           this.$notify.error({title: 'Error', duration: 0, message})
           throw new Error(message)
         },
-
-        sortChange ({prop, order}) {
-          this.sort = order ?  ((order == 'descending' ? '-' : '') + prop) : ''
-          this.page = 1
-          this.proxiesUpdate()
-        },
-
-        formatTime (val) {
-          if (val) return `${val.format('YYYY-MM-DD HH:mm:ss')} (${val.fromNow()})`
-        },
-
-        formatInt (val) {
-          return val ? val.toLocaleString() : val
-        }
       },
     })
   </script>
