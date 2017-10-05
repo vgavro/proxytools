@@ -166,9 +166,9 @@
         </el-button>
         <el-dropdown-menu slot="dropdown" class="dropdown-menu-small">
           <el-dropdown-item :command="{action: 'fetch'}">Fetch proxies</el-dropdown-item>
-          <el-dropdown-item>Recheck proxies</el-dropdown-item>
-          <el-dropdown-item>Add proxies</el-dropdown-item>
-          <el-dropdown-item>Forget blacklist</el-dropdown-item>
+          <el-dropdown-item :command="{action: 'recheck'}">Recheck proxies</el-dropdown-item>
+          <!--<el-dropdown-item>Add proxies</el-dropdown-item>-->
+          <el-dropdown-item :command="{action: 'forget_blacklist'}">Forget blacklist</el-dropdown-item>
         </el-dropdown-menu>
       </el-dropdown>
     </header>
@@ -214,15 +214,23 @@
         >
         <el-table-column type="expand">
           <template scope="{row}">
-            <el-dropdown>
+            <el-dropdown  @command="$root.handleAction">
               <el-button type="primary" size="mini">
                 Actions<i class="el-icon-caret-bottom el-icon--right"></i>
               </el-button>
               <el-dropdown-menu slot="dropdown" class="dropdown-menu-mini">
-                <el-dropdown-item>Recheck</el-dropdown-item>
-                <el-dropdown-item v-if="!row.blacklist">Blacklist</el-dropdown-item>
-                <el-dropdown-item v-if="row.blacklist">Unblacklist</el-dropdown-item>
-                <el-dropdown-item v-if="row.rest_till">Reset rest_till</el-dropdown-item>
+                <el-dropdown-item
+                  :command="{action: 'recheck', addr: row.addr}"
+                  >Recheck</el-dropdown-item>
+                <el-dropdown-item v-if="!row.blacklist"
+                  :command="{action: 'blacklist', addr: row.addr}"
+                  >Blacklist</el-dropdown-item>
+                <el-dropdown-item v-if="row.blacklist"
+                  :command="{action: 'unblacklist', addr: row.addr}"
+                  >Unblacklist</el-dropdown-item>
+                <el-dropdown-item v-if="row.rest_till"
+                  :command="{action: 'reset_rest_till', addr: row.addr}"
+                  >Reset rest_till</el-dropdown-item>
               </el-dropdown-menu>
             </el-dropdown>
             <p>
@@ -541,20 +549,35 @@
         },
 
         handleAction (action) {
-          if (action && action.action === 'fetch') {
-            this.$confirm('Are you sure you want to fetch proxies?').then(() => {
-              this.fetch('/action', {method: 'POST', body: action}).then(() => {
-                this.$notify.success('Success')
-              })
+          const runAction = (action, params) => {
+            if (params) action = Object.assign({}, action, params)
+            this.fetch('/action', {method: 'POST', body: action}).then(() => {
+              this.$notify.success(`Success: ${action.action}`)
             })
           }
-          // TODO implement actions
-          // else if (command === 'check') {
-          //   this.$prompt('Are you sure you want to re-check proxies? Enter delta (example: "1h" or "1h30m") of proxy used time (success or fail) to skip recently used proxies, or leave empty to re-check all.').then(delta => {
-          //     debugger
-          //   })
-          // }
-          // console.log('Command invoked', command)
+
+          if (action.addr) {
+            runAction(action)
+
+          } else if (action.action === 'fetch') {
+            this.$confirm('Are you sure you want to fetch proxies?').then(() => {
+              runAction(action)
+            })
+
+          } else if (action.action === 'recheck') {
+            this.$prompt('Are you sure you want to recheck proxies? ' +
+              'Enter used_at_before delta (example: "1h" or "1h30m") ' +
+              'to skip recently used proxies, leave empty to recheck all.').then(data => {
+              runAction(action, {used_at_before: data.value || '0s'})
+            })
+
+          } else if (action.action === 'forget_blacklist') {
+            this.$prompt('Are you sure you want to clear blacklisted proxies? ' +
+              'Enter used_at_before delta (example: "1h" or "1h30m") ' +
+              'not to clear recently used proxies, leave empty to clear all.').then(data => {
+              runAction(action, {used_at_before: data.value || '0s'})
+            })
+          }
         },
 
         fetch (url, params) {

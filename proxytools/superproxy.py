@@ -1,10 +1,11 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import parse_qsl
 from itertools import chain
 import json
 
 from requests.status_codes import _codes, codes
+from pytimeparse.timeparse import timeparse
 
 from .models import PROXY_RESULT_TYPE
 from .utils import ResponseMatch
@@ -44,8 +45,6 @@ SUPERPROXY_REQUEST_HEADERS = {
     'proxy_request_ident': (str, str),
 }
 
-_EPOCH_START = datetime(1970, 1, 1)
-
 
 def is_hop_by_hop(header):
     return header.lower() in HOP_BY_HOP_HEADERS
@@ -70,6 +69,25 @@ def _match_proxy_search_token(p, token):
         any(token in source for source in p.fetch_sources) or
         any(token in type.name for type in p.types)
     )
+
+
+def _iter_proxies_by_status(proxylist, status):
+    now = datetime.utcnow()
+    iterable = []
+    if 'active' in status or 'rest' in status:
+        iterable = chain(iterable, proxylist.active_proxies.values())
+    if 'blacklist' in status:
+        iterable = chain(iterable, proxylist.blacklist_proxies.values())
+    for p in iterable:
+        if p.blacklist:
+            if 'blacklist' not in status:
+                continue
+        elif p.rest_till and p.rest_till > now:
+            if 'rest' not in status:
+                continue
+        elif 'active' not in status:
+            continue
+        yield p
 
 
 class WSGISuperProxy:
@@ -134,22 +152,8 @@ class WSGISuperProxy:
             per_page = int(qs.get('per_page', 50))
             start = ((int(qs['page']) - 1) * per_page) if 'page' in qs else None
 
-            now = datetime.utcnow()
-            iterable = []
-            if 'active' in status or 'rest' in status:
-                iterable = chain(iterable, self.proxylist.active_proxies.values())
-            if 'blacklist' in status:
-                iterable = chain(iterable, self.proxylist.blacklist_proxies.values())
             proxies = []
-            for p in iterable:
-                if p.blacklist:
-                    if 'blacklist' not in status:
-                        continue
-                elif p.rest_till and p.rest_till > now:
-                    if 'rest' not in status:
-                        continue
-                elif 'active' not in status:
-                    continue
+            for p in _iter_proxies_by_status(self.proxylist, status):
                 if (not search or any(all(_match_proxy_search_token(p, token)
                                           for token in token_group)
                                       for token_group in search)):
@@ -158,9 +162,7 @@ class WSGISuperProxy:
             if sort and sort == 'speed':
                 proxies.sort(key=lambda p: p.speed or -1, reverse=sort_desc)
             elif sort and sort == 'used_at':
-                proxies.sort(key=lambda p: max([p.fail_at or _EPOCH_START,
-                                                p.success_at or _EPOCH_START]),
-                             reverse=sort_desc)
+                proxies.sort(key=lambda p: p.used_at, reverse=sort_desc)
 
             resp = self.proxylist.json_encoder.dumps({
                 'proxies': (proxies[start: start + per_page]
@@ -205,14 +207,66 @@ class WSGISuperProxy:
 
         elif environ['PATH_INFO'] == '/action':
             data = environ['wsgi.input'].read(int(environ['CONTENT_LENGTH']))
+            print(data)
             data = json.loads(data)
+
+            def error(msg):
+                return self.resp(start_resp, codes.UNPROCESSABLE, msg)
+
+            proxy_actions = {
+                'blacklist': lambda p: self.proxylist.blacklist(p),
+                'unblacklist': lambda p: self.proxylist.unblacklist(p),
+                'reset_rest_till': lambda p: p.__setattr__('rest_till', None),
+                # avoid "can't assign to lambda" with __setattr__ here
+                'recheck': lambda p: self.proxylist.fetcher.checker(p),
+            }
+
             if data['action'] == 'fetch':
                 if self.proxylist.fetcher and self.proxylist.fetcher.ready:
                     self.proxylist.fetcher()
                 else:
-                    return self.resp(start_resp, codes.UNPROCESSABLE, 'Fetcher not ready')
+                    return error('Fetcher not ready')
+
+            elif data['action'] == 'forget_blacklist':
+                if 'used_at_before' not in data:
+                    return error('Required params not found: {}'.format(data))
+                used_at_before = (datetime.utcnow() -
+                                  timedelta(seconds=timeparse(data['used_at_before'])))
+                for p in tuple(self.proxylist.blacklist_proxies.values()):
+                    if p.used_at and used_at_before > p.used_at:
+                        del self.proxylist.blacklist_proxies[p.addr]
+
+            elif data['action'] in proxy_actions:
+                if data['action'] == 'recheck':
+                    if (not self.proxylist.fetcher or not self.proxylist.fetcher.checker):
+                        return error('No checker configured')
+
+                if 'addr' in data:
+                    proxy = self.proxylist.get_by_addr(data['addr'])
+                    if not proxy:
+                        return error('Proxy not found: {}'.format(data['addr']))
+                    proxy_actions[data['action']](proxy)
+
+                elif 'status' in data or 'used_at_before' in data or 'used_at_after' in data:
+                    status = data.get('status', '').split(',') or ('rest', 'active', 'blacklist')
+                    used_at_before = (data.get('used_at_before') and
+                        datetime.utcnow() - timedelta(seconds=timeparse(data['used_at_before'])))
+                    used_at_after = (data.get('used_at_after') and
+                        datetime.utcnow() - timedelta(seconds=timeparse(data['used_at_after'])))
+
+                    for p in tuple(_iter_proxies_by_status(self.proxylist, status)):
+                        if used_at_before and p.used_at and used_at_before < p.used_at:
+                            continue
+                        if used_at_after and p.used_at and used_at_after > p.used_at:
+                            continue
+                        proxy_actions[data['action']](proxy)
+
+                else:
+                    return error('Required params not found: {}'.format(data))
+
             else:
                 return self.resp(start_resp, codes.UNPROCESSABLE, 'Unknown action')
+
             return self.resp(start_resp, codes.OK, '{"status": "ok"}',
                              content_type='application/json')
 

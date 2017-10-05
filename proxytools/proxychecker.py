@@ -98,7 +98,6 @@ class ProxyChecker(AbstractProxyProcessor):
         else:
             logger.debug('Check %s success: %s', protocol, proxy.addr)
             proxy.success_at = datetime.utcnow()
-            proxy.fail_at = None
             proxy.fail = 0
             proxy.speed = get_response_speed(resp, start_at)
             return True

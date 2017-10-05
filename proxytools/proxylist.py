@@ -113,22 +113,28 @@ class ProxyList:
 
     def proxy(self, proxy, load=False):
         if proxy.addr in self.blacklist_proxies:
-            self.blacklist_proxies[proxy.addr].merge_meta(proxy)
-
-        elif proxy.addr in self.active_proxies:
-            if proxy.blacklist:
-                self.blacklist(proxy)
+            if proxy.success_at > proxy.fail_at:
+                # recheck - we should unblacklist it
+                self.unblacklist(proxy)
             else:
-                self.active_proxies[proxy.addr].merge_meta(proxy)
+                # fetch from other source
+                self.blacklist_proxies[proxy.addr].merge_meta(proxy)
 
         elif proxy.blacklist:
-            self.blacklist_proxies[proxy.addr] = proxy
-
-        elif not load and proxy.fail_at and proxy.fail_at > proxy.success_at:
-            # called after proxy checking and it was failed
+            # loading
             self.blacklist(proxy)
 
+        elif not load and proxy.fail_at and (not proxy.success_at or
+                                             proxy.fail_at > proxy.success_at):
+            # check or recheck and it was failed
+            self.blacklist(proxy)
+
+        elif proxy.addr in self.active_proxies:
+            # fetch from other source
+            self.active_proxies[proxy.addr].merge_meta(proxy)
+
         else:
+            # loading or fetch
             self.active_proxies[proxy.addr] = proxy
             self.proxy_ready.set()
 
@@ -165,6 +171,13 @@ class ProxyList:
             del self.proxy_pool_manager[proxy.url]
         logger.debug('Blacklist: %s %s', proxy.addr, self._stats_str)
         self.maybe_update()
+
+    def unblacklist(self, proxy):
+        proxy.blacklist = False
+        if proxy.addr in self.blacklist:
+            del self.blacklist_proxies[proxy.addr]
+        self.active_proxies[proxy.addr] = proxy
+        self.proxy_ready.set()
 
     def success(self, proxy, timeout=None, resp=None, request_ident=None):
         proxy.success_at = datetime.utcnow()
@@ -274,12 +287,8 @@ class ProxyList:
     def get_random(self, **kwargs):
         return self.get(self._get_random, **kwargs)
 
-    def forget_blacklist(self, before):
-        if isinstance(before, timedelta):
-            before = datetime.utcnow() - timedelta
-        for proxy in tuple(self.blacklist_proxies.values()):
-            if proxy.fail_at < before:
-                del self.blacklist_proxies[proxy.addr]
+    def get_by_addr(self, addr):
+        return self.active_proxies.get(addr) or self.blacklist_proxies.get(addr)
 
     def load(self, filename):
         with open(filename, 'r') as fh:

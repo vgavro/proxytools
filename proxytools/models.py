@@ -95,6 +95,13 @@ class Proxy:
         # is checked locally
         return self.success_at and (not self.fetch_at or (self.fetch_at < self.success_at))
 
+    @property
+    def used_at(self):
+        # NOTE: we're not considering rest, because we're not storing rest_since
+        if self.fail_at and (not self.success_at or self.fail_at >= self.success_at):
+            return self.fail_at
+        return self.success_at or self.fail_at
+
     def set_rest_till(self, rest_till):
         if not self.rest_till or self.rest_till < rest_till:
             self.rest_till = rest_till
