@@ -15,10 +15,10 @@
       color: #0faa54;
     }
     .red {
-      color: #FF4949;
+      color: #ff4949;
     }
     .yellow {
-      color: #F7BA2A;
+      color: #f7ba2a;
     }
     header {
       background-color: #324157;
@@ -169,11 +169,13 @@
           <el-dropdown-item :command="{action: 'fetch'}">Fetch proxies</el-dropdown-item>
           <el-dropdown-item :command="{action: 'recheck'}">Recheck proxies</el-dropdown-item>
           <!--<el-dropdown-item>Add proxies</el-dropdown-item>-->
-          <el-dropdown-item :command="{action: 'forget_blacklist'}">Forget blacklist</el-dropdown-item>
+          <el-dropdown-item :command="{action: 'forget_blacklist'}">
+            Forget blacklist
+          </el-dropdown-item>
         </el-dropdown-menu>
       </el-dropdown>
     </header>
-    <main class="f16">
+    <main>
       <router-view></router-view>
     </main>
     <footer>
@@ -236,16 +238,18 @@
             </el-dropdown>
             <p>
               Success at: {{row.success_at | formatTime}}
-              [{{ (row.success_at && row.success_at > row.fetch_at) ? 'checked' : 'unchecked' }}]
+              [{{ (row.success_at && row.success_at > row.fetch_at) ? 'local' : 'no-local' }}]
             </p>
             <p>Fail at: {{row.fail_at | formatTime}} [{{row.fail}}]</p>
             <p>Rest till: {{row.rest_till | formatTime}}</p>
             <p>Fetch at: {{row.fetch_at | formatTime}} [{{row.fetch_sources.join(' ')}}]</p>
 
-            <el-table :data="row.history" v-if="row.history" :show-header="false" class="inner-table">
+            <el-table :data="row.history" v-if="row.history" :show-header="false"
+              class="inner-table">
               <el-table-column width="86px">
                 <template scope="{row}">
-                  <el-tag :type="{FAIL: 'danger', SUCCESS: 'success', REST: 'warning'}[row.result]">
+                  <el-tag
+                    :type="{FAIL: 'danger', SUCCESS: 'success', REST: 'warning'}[row.result]">
                     {{row.result}}
                   </el-tag>
                 </template>
@@ -321,12 +325,8 @@
           </el-checkbox-group>
         </div>
         <div class="pagination" v-if="type == 'history' && history">
-          <el-pagination
-             @size-change="historyUpdate"
-             @current-change="historyUpdate"
-             :current-page.sync="page"
-             :page-size="per_page"
-             layout="prev, pager, next"
+          <el-pagination @size-change="historyUpdate" @current-change="historyUpdate"
+             :current-page.sync="page" :page-size="per_page" layout="prev, pager, next"
              :total="total">
           </el-pagination>
         </div>
@@ -334,7 +334,10 @@
       <el-table stripe border :data="history" v-show="type === 'history'">
         <el-table-column label="Result" prop="result" width="86px">
           <template scope="{row}">
-            <el-tag :type="{FAIL: 'danger', SUCCESS: 'success', REST: 'warning'}[row.result]">{{row.result}}</el>
+            <el-tag
+              :type="{FAIL: 'danger', SUCCESS: 'success', REST: 'warning'}[row.result]">
+              {{row.result}}
+            </el>
           </template>
         </el-table-column>
         <el-table-column label="Time" prop="time" :formatter="(h) => h.time.fromNow()">
