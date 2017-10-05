@@ -3,6 +3,7 @@
 <head>
   <title>SuperProxy</title>
   <link href='//unpkg.com/element-ui@1.4.6/lib/theme-default/index.css' rel="stylesheet">
+  <link href='//unpkg.com/world-flags-sprite@0.0.2/stylesheets/flags16.css' rel="stylesheet">
   <style>
     body {
       font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -128,7 +129,7 @@
     }
   </style>
 </head>
-<body>
+<body class="f16">  <!-- flags sizes -->
   <div id="app" v-cloak>
     <header>
       <div class="logo"><span>&laquo;S&raquo;</span> SuperProxy</div>
@@ -172,7 +173,7 @@
         </el-dropdown-menu>
       </el-dropdown>
     </header>
-    <main>
+    <main class="f16">
       <router-view></router-view>
     </main>
     <footer>
@@ -274,6 +275,10 @@
           :formatter="(p) => p.types.join(' ')">
         </el-table-column>
         <el-table-column label="Country" prop="country" width="75px">
+          <template scope="{row}">
+            <span :class="row.country ? 'flag ' + row.country.toLowerCase() : ''"></span>
+            {{row.country}}
+          </template>
         </el-table-column>
         <el-table-column label="Speed" prop="speed" sortable="custom">
         </el-table-column>
@@ -355,8 +360,8 @@
   </template>
 
   <script src="//unpkg.com/moment@2.18.1/min/moment.min.js"></script>
-  <script src="//unpkg.com/vue@2.4.4/dist/vue.js"></script>
-  <script src="//unpkg.com/vue-router@2.7.0/dist/vue-router.js"></script>
+  <script src="//unpkg.com/vue@2.4.4/dist/vue.min.js"></script>
+  <script src="//unpkg.com/vue-router@2.7.0/dist/vue-router.min.js"></script>
   <script src="//unpkg.com/element-ui@1.4.6/lib/index.js"></script>
   <script src="//unpkg.com/element-ui@1.4.6/lib/umd/locale/en.js"></script>
   <script>
@@ -477,6 +482,7 @@
         const qs = this.$route.query
         if (qs.type) this.type = qs.type
         if (this.type === 'history') {
+          if (qs.result) this.result = qs.result.split(',')
           if (qs.search) this.search = decodeURIComponent(qs.search)
           if (qs.page) this.page = parseInt(qs.page)
           if (qs.per_page) this.per_page = parseInt(qs.per_page)
