@@ -259,10 +259,9 @@
                   {{row.time | formatTime}}
                 </template>
               </el-table-column>
-              <el-table-column show-overflow-tooltip>
-                <template scope="{row}">
-                  {{row.request_ident}} {{row.reason}}
-                </template>
+              <el-table-column prop="reason" show-overflow-tooltip>
+              </el-table-column>
+              <el-table-column prop="request_ident">
               </el-table-column>
             </el-table>
 
