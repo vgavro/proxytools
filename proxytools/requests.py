@@ -166,6 +166,7 @@ class ProxyListMixin:
         fail_timeout = kwargs.pop('proxy_fail_timeout', None)
         rest_response = kwargs.pop('proxy_rest_response', None)
         rest_timeout = kwargs.pop('proxy_rest_timeout', None)
+        request_ident = kwargs.pop('proxy_request_ident', None)
         if rest_response and not rest_timeout:
             raise ValueError('rest_response must be used with rest_timeout > 0')
         persist = kwargs.pop('proxy_persist', False)
@@ -181,7 +182,7 @@ class ProxyListMixin:
 
             try:
                 proxy = self.proxylist.get(strategy, exclude=exclude, persist=persist_addr,
-                                           **proxy_kwargs)
+                                           request_ident=request_ident, **proxy_kwargs)
             except (ProxyMaxRetriesExceeded, InsufficientProxiesError, Timeout) as exc:
                 if allow_no_proxy:
                     proxy = None
@@ -198,7 +199,8 @@ class ProxyListMixin:
                 # NOTE: timeout extends BaseException and should not match
                 if not proxy:
                     raise
-                self.proxylist.fail(proxy, exc=exc, timeout=fail_timeout)
+                self.proxylist.fail(proxy, timeout=fail_timeout, exc=exc,
+                                    request_ident=request_ident)
                 if persist is True:
                     self._persist_addr = None
                 exclude.append(proxy.addr)
@@ -209,19 +211,22 @@ class ProxyListMixin:
                     # NOTE: no content validation if no proxy was used
                     return resp
                 if rest_response and rest_response(resp):
-                    self.proxylist.rest(proxy, rest_timeout, resp=resp)
+                    self.proxylist.rest(proxy, timeout=rest_timeout, resp=resp,
+                                        request_ident=request_ident)
                     if persist is True:
                         self._persist_addr = None
                     exclude.append(proxy.addr)
                 elif not success_response or success_response(resp):
-                    self.proxylist.success(proxy, timeout=success_timeout, resp=resp)
+                    self.proxylist.success(proxy, timeout=success_timeout, resp=resp,
+                                           request_ident=request_ident)
                     if persist is True:
                         self._persist_addr = proxy.addr
                     # NOTE: maybe remove it, test purpose only (also used in superproxy)
                     resp._proxy = proxy
                     return resp
                 else:
-                    self.proxylist.fail(proxy, timeout=fail_timeout, resp=resp)
+                    self.proxylist.fail(proxy, timeout=fail_timeout, resp=resp,
+                                        request_ident=request_ident)
                     if persist is True:
                         self._persist_addr = None
                     exclude.append(proxy.addr)

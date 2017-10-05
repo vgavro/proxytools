@@ -143,7 +143,7 @@ class ProxyList:
         proxy.fail += 1
         proxy.in_use -= 1
         assert proxy.in_use >= 0
-        reason = (exc and repr(exc)) or (resp and repr_response(resp))
+        reason = (exc and repr(exc)) or (resp is not None and repr_response(resp) or None)
         if self.history:
             proxy.set_history(proxy.fail_at, PROXY_RESULT_TYPE.FAIL, reason,
                               request_ident, self.history)
@@ -190,7 +190,7 @@ class ProxyList:
             proxy.set_rest_till(proxy.success_at + timedelta(seconds=timeout))
         if self.history:
             proxy.set_history(proxy.success_at, PROXY_RESULT_TYPE.SUCCESS,
-                              resp and repr_response(resp),
+                              resp is not None and repr_response(resp) or None,
                               request_ident, self.history)
         self.proxy_ready.set()  # TODO: consider rest_till?
         sleep(0)  # switch to other greenlet for fair play
@@ -200,7 +200,7 @@ class ProxyList:
         assert proxy.in_use >= 0
         now = datetime.utcnow()
         proxy.set_rest_till(now + timedelta(seconds=timeout))
-        reason = resp and repr_response(resp)
+        reason = resp is not None and repr_response(resp) or None
         if self.history:
             proxy.set_history(now, PROXY_RESULT_TYPE.REST, reason,
                               request_ident, self.history)
