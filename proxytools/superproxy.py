@@ -207,8 +207,7 @@ class WSGISuperProxy:
 
         elif environ['PATH_INFO'] == '/action':
             data = environ['wsgi.input'].read(int(environ['CONTENT_LENGTH']))
-            print(data)
-            data = json.loads(data)
+            data = json.loads(data.decode('utf-8'))
 
             def error(msg):
                 return self.resp(start_resp, codes.UNPROCESSABLE, msg)

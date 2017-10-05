@@ -168,8 +168,7 @@ class JSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, datetime):
             # assuming naive datetimes in UTC
-            return (obj.isoformat(timespec='seconds') +
-                    (obj.tzinfo and '' or 'Z'))
+            return obj.strftime('%Y-%m-%dT%H:%M:%SZ')
         if isinstance(obj, (date, time)):
             return obj.isoformat()
         if isinstance(obj, enum.Enum):

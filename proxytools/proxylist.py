@@ -113,7 +113,7 @@ class ProxyList:
 
     def proxy(self, proxy, load=False):
         if proxy.addr in self.blacklist_proxies:
-            if proxy.success_at > proxy.fail_at:
+            if proxy.success_at and (not proxy.fail_at or proxy.success_at > proxy.fail_at):
                 # recheck - we should unblacklist it
                 self.unblacklist(proxy)
             else:
@@ -174,10 +174,11 @@ class ProxyList:
 
     def unblacklist(self, proxy):
         proxy.blacklist = False
-        if proxy.addr in self.blacklist:
+        if proxy.addr in self.blacklist_proxies:
             del self.blacklist_proxies[proxy.addr]
-        self.active_proxies[proxy.addr] = proxy
-        self.proxy_ready.set()
+        if proxy.addr not in self.active_proxies:
+            self.active_proxies[proxy.addr] = proxy
+            self.proxy_ready.set()
 
     def success(self, proxy, timeout=None, resp=None, request_ident=None):
         proxy.success_at = datetime.utcnow()
