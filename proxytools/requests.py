@@ -88,10 +88,11 @@ class ConfigurableSession(Session):
         retry_response = kwargs.pop('retry_response', self.retry_response)
         retry_exception = kwargs.pop('retry_exception', self.retry_exception)
         retry_count = kwargs.get('retry_count', self.retry_count)
-        retry_wait = kwargs.get('retry_wait', self.retry_wait)
+        retry_wait = retry_default_wait = kwargs.get('retry_wait', self.retry_wait)
 
         for retry in range(retry_count + 1):
-            wait = retry and retry_wait or request_wait
+            wait = retry and (retry_wait if isinstance(retry_wait, (int, float))
+                              else retry_default_wait) or request_wait
             while wait and self.request_at:
                 # checking continuous for simultaneous use
                 delta = (datetime.utcnow() - self.request_at).total_seconds()
@@ -104,11 +105,12 @@ class ConfigurableSession(Session):
             try:
                 resp = super().request(*args, **kwargs)
             except Exception as exc:
-                if (retry_exception and retry_exception(exc) and
-                   retry < retry_count):
+                retry_wait = retry_exception and retry_exception(exc)
+                if retry_wait and retry < retry_count:
                     continue
                 raise
-            if retry_response and retry_response(resp):
+            retry_wait = retry_response and retry_response(resp)
+            if retry_wait:
                 continue
             break
         return resp
