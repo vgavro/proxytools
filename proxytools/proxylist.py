@@ -46,6 +46,7 @@ class ProxyList:
         # Event is set each time proxy is added or released
         self.proxy_ready = Event()
         self._proxy_ready_at = None
+        self._proxy_ready_notify_worker = None
 
         self.active_proxies = {}
         self.blacklist_proxies = {}
@@ -153,7 +154,7 @@ class ProxyList:
 
         elif proxy.blacklist:
             # loading
-            self.blacklist(proxy)
+            self.blacklist(proxy, load=True)
 
         elif not load and proxy.fail_at and (not proxy.success_at or
                                              proxy.fail_at > proxy.success_at):
@@ -168,7 +169,7 @@ class ProxyList:
             # loading or fetch
             self.active_proxies[proxy.addr] = proxy
             if load and proxy.rest_till and proxy.rest_till > datetime.utcnow():
-                self._proxy_ready_at(proxy.rest_till)
+                self._proxy_ready_notify_at(proxy.rest_till)
             else:
                 self.proxy_ready.set()
 
@@ -197,7 +198,7 @@ class ProxyList:
                     self.proxy_ready.set()
                     sleep(0)  # switch to other greenlet for fair play
 
-    def blacklist(self, proxy):
+    def blacklist(self, proxy, load=False):
         proxy.blacklist = True
         if proxy.addr in self.active_proxies:
             del self.active_proxies[proxy.addr]
@@ -205,7 +206,8 @@ class ProxyList:
         if proxy.url in self.proxy_pool_manager:
             self.proxy_pool_manager[proxy.url].clear()
             del self.proxy_pool_manager[proxy.url]
-        logger.debug('Blacklist: %s %s', proxy.addr, self._stats_str)
+        if not load:
+            logger.debug('Blacklist: %s %s', proxy.addr, self._stats_str)
         self.maybe_update()
 
     def unblacklist(self, proxy):
