@@ -15,7 +15,8 @@ class HidesterProxyFetcher(ConcreteProxyFetcher):
     }
 
     def worker(self):
-        resp = self.session.get(self.WEB_URL)  # getting required cookies
+        # not needed with last hidester.com fixes
+        # resp = self.session.get(self.WEB_URL)  # getting required cookies
         resp = self.session.get(self.JSON_URL, headers={'Referer': self.WEB_URL})
         resp.raise_for_status()
         for proxy in resp.json():
