@@ -313,7 +313,8 @@ class WSGISuperProxy:
         except BaseException as exc:
             logger.error('%r', exc)
             # logger.exception('%r', exc)
-            return self.resp(start_resp, codes.INTERNAL_SERVER_ERROR, repr(exc))
+            return self.resp(start_resp, codes.INTERNAL_SERVER_ERROR, repr(exc),
+                             headers=[('X-Superproxy-Error', exc.__class__.__name__)])
 
         headers = []
         # http://docs.python-requests.org/en/master/user/quickstart/#response-headers

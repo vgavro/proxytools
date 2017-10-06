@@ -9,6 +9,7 @@ from requests.sessions import Session
 from requests.utils import select_proxy, urldefragauth
 from gevent import Timeout, sleep
 
+from . import proxylist
 from .proxylist import ProxyMaxRetriesExceeded, InsufficientProxiesError
 from .superproxy import SUPERPROXY_REQUEST_HEADERS
 from .utils import repr_response, get_random_user_agent
@@ -316,6 +317,10 @@ class SuperProxySession(ConfigurableSession):
                 SUPERPROXY_REQUEST_HEADERS[key][1](value)
 
         resp = super().request(method, url, headers=headers, **kwargs)
+        error_name = resp.headers.get('X-Superproxy-Error')
+        if error_name in ('InsufficientProxiesError', 'ProxyMaxRetriesExceeded'):
+            raise getattr(proxylist, error_name)(
+                resp.text[len(error_name) + 3:len(resp.text) - 3])
 
         if persist:
             self._persist_addr = resp.headers.get('X-Superproxy-Addr') or None
