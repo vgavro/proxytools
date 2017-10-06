@@ -6,7 +6,7 @@ import json
 import os.path
 import atexit
 
-from gevent import GreenletExit, Timeout, sleep
+from gevent import GreenletExit, Timeout, sleep, spawn
 from gevent.event import Event
 from gevent.thread import get_ident
 
@@ -45,6 +45,7 @@ class ProxyList:
 
         # Event is set each time proxy is added or released
         self.proxy_ready = Event()
+        self._proxy_ready_at = None
 
         self.active_proxies = {}
         self.blacklist_proxies = {}
@@ -97,6 +98,36 @@ class ProxyList:
                         len(self.waiting), not self.fetcher and 'no' or
                         (self.fetcher.ready and 'ready' or 'working')))
 
+    def _proxy_ready_notify_at(self, proxy_ready_at):
+        """
+        Spawns ProxyList._proxy_ready_notify for ProxyList.proxy_ready event invoke
+        on Proxy.rest_till expiration.
+        """
+        if self._proxy_ready_at:
+            if self._proxy_ready_at > proxy_ready_at:
+                self._proxy_ready_notify_worker.kill()
+                self._proxy_ready_at = proxy_ready_at
+                self._proxy_ready_notify_worker = spawn(self._proxy_ready_notify)
+        else:
+            self._proxy_ready_at = proxy_ready_at
+            assert (not self._proxy_ready_notify_worker or
+                    self._proxy_ready_notify_worker.ready())
+            self._proxy_ready_notify_worker = spawn(self._proxy_ready_notify)
+
+    def _proxy_ready_notify(self):
+        now = datetime.utcnow()
+        while self._proxy_ready_at:
+            assert self._proxy_ready_at > now
+            sleep((self._proxy_ready_at - now).total_seconds())
+            now = datetime.utcnow()
+            try:
+                self._proxy_ready_at = min(p.rest_till for p in self.active_proxies.values()
+                                           if p.rest_till and p.rest_till > now)
+            except ValueError:
+                # no rest_till in future
+                self._proxy_ready_at = None
+            self.proxy_ready.set()
+
     def maybe_update(self):
         if not len(self.active_proxies) and not self.fetcher:
             raise InsufficientProxiesError('Insufficient proxies {}'
@@ -136,7 +167,10 @@ class ProxyList:
         else:
             # loading or fetch
             self.active_proxies[proxy.addr] = proxy
-            self.proxy_ready.set()
+            if load and proxy.rest_till and proxy.rest_till > datetime.utcnow():
+                self._proxy_ready_at(proxy.rest_till)
+            else:
+                self.proxy_ready.set()
 
     def fail(self, proxy, timeout=None, exc=None, resp=None, request_ident=None):
         proxy.fail_at = datetime.utcnow()
@@ -158,8 +192,10 @@ class ProxyList:
                 timeout = self.fail_timeout if timeout is None else timeout
                 if timeout:
                     proxy.set_rest_till(proxy.fail_at + timedelta(seconds=timeout))
-                self.proxy_ready.set()  # TODO: consider rest_till?
-                sleep(0)  # switch to other greenlet for fair play
+                    self._proxy_ready_notify_at(proxy.rest_till)
+                else:
+                    self.proxy_ready.set()
+                    sleep(0)  # switch to other greenlet for fair play
 
     def blacklist(self, proxy):
         proxy.blacklist = True
@@ -185,21 +221,24 @@ class ProxyList:
         proxy.fail = 0
         proxy.in_use -= 1
         assert proxy.in_use >= 0
-        timeout = self.success_timeout if timeout is None else timeout
-        if timeout:
-            proxy.set_rest_till(proxy.success_at + timedelta(seconds=timeout))
         if self.history:
             proxy.set_history(proxy.success_at, PROXY_RESULT_TYPE.SUCCESS,
                               resp is not None and repr_response(resp) or None,
                               request_ident, self.history)
-        self.proxy_ready.set()  # TODO: consider rest_till?
-        sleep(0)  # switch to other greenlet for fair play
+        timeout = self.success_timeout if timeout is None else timeout
+        if timeout:
+            proxy.set_rest_till(proxy.success_at + timedelta(seconds=timeout))
+            self._proxy_ready_notify_at(proxy.rest_till)
+        else:
+            self.proxy_ready.set()
+            sleep(0)  # switch to other greenlet for fair play
 
     def rest(self, proxy, timeout, resp=None, request_ident=None):
         proxy.in_use -= 1
         assert proxy.in_use >= 0
         now = datetime.utcnow()
         proxy.set_rest_till(now + timedelta(seconds=timeout))
+        self._proxy_ready_notify_at(proxy.rest_till)
         reason = resp is not None and repr_response(resp) or None
         if self.history:
             proxy.set_history(now, PROXY_RESULT_TYPE.REST, reason,
