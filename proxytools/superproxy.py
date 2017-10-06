@@ -43,6 +43,7 @@ SUPERPROXY_REQUEST_HEADERS = {
     'proxy_rest_timeout': (int, str),
     'proxy_fail_timeout': (int, str),
     'proxy_request_ident': (str, str),
+    'proxy_min_speed': (float, str),
 }
 
 

@@ -251,7 +251,7 @@ class ProxyList:
     def in_use(self):
         return sum([p.in_use for p in self.active_proxies.values()])
 
-    def get_ready_proxies(self, exclude=[], countries=None, countries_exclude=None):
+    def get_ready_proxies(self, exclude=[], countries=None, countries_exclude=None, min_speed=None):
         now = datetime.utcnow()
         return {
             addr: p
@@ -260,7 +260,8 @@ class ProxyList:
             addr not in exclude and
             (not p.rest_till or p.rest_till < now) and
             (not countries or p.country in countries) and
-            (not countries_exclude or p.country not in countries_exclude)
+            (not countries_exclude or p.country not in countries_exclude) and
+            (not min_speed or p.speed >= min_speed)
         }
 
     def get(self, strategy, persist=None, wait=True, request_ident=None, **proxy_params):
