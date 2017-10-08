@@ -131,7 +131,7 @@ class ProxyList:
 
     def maybe_update(self):
         if not len(self.active_proxies) and not self.fetcher:
-            raise InsufficientProxiesError('Insufficient proxies {}'
+            raise InsufficientProxiesError('No proxies and no fetcher {}'
                                            .format(self._stats_str))
         if self.fetcher and self.fetcher.ready and self.need_update:
             now = datetime.utcnow()
@@ -253,7 +253,8 @@ class ProxyList:
     def in_use(self):
         return sum([p.in_use for p in self.active_proxies.values()])
 
-    def get_ready_proxies(self, exclude=[], countries=None, countries_exclude=None, min_speed=None):
+    def get_ready_proxies(self, exclude=[], countries=None, countries_exclude=None,
+                          min_speed=None):
         now = datetime.utcnow()
         return {
             addr: p
@@ -280,9 +281,10 @@ class ProxyList:
             ready_proxies = self.get_ready_proxies(**proxy_params)
             if ready_proxies:
                 break
-            elif wait is False or ((not self.fetcher or self.fetcher.ready) and not self.in_use):
-                raise InsufficientProxiesError('Insufficient proxies {}'
-                                               .format(self._stats_str))
+            elif not wait or ((not self.fetcher or self.fetcher.ready) and not self.in_use):
+                raise InsufficientProxiesError('No ready proxies {} {}{}'
+                    .format(proxy_params, request_ident and request_ident + ' ' or '',
+                            self._stats_str))
             else:
                 # logger.info('Wait proxy (thread %s) %s', ident, self._stats_str)
                 self.proxy_ready.clear()
@@ -290,14 +292,19 @@ class ProxyList:
                     # Storing extra data for superproxy monitoring
                     self.waiting[ident] = dict(since=datetime.utcnow(),
                         request_ident=request_ident, params=proxy_params)
-                elif (wait is not True and wait is not None and
+                elif (wait is not True and
                      (datetime.utcnow() - self.waiting[ident]['since']).total_seconds() > wait):
                     del self.waiting[ident]
-                    raise Timeout(wait)
+                    raise InsufficientProxiesError('Ready proxies wait timeout({}) {} {}{}'
+                        .format(wait, proxy_params, request_ident and request_ident + ' ' or '',
+                                self._stats_str))
                 try:
                     self.proxy_ready.wait(None if wait is True else wait)
-                except (Timeout, GreenletExit):
+                except Timeout:
+                    continue
+                except GreenletExit:
                     del self.waiting[ident]
+                    raise
         if ident in self.waiting:
             del self.waiting[ident]
 
@@ -310,8 +317,9 @@ class ProxyList:
         if proxy:
             proxy.in_use += 1
             return proxy
-        raise InsufficientProxiesError('Insufficient proxies {}'
-                                       .format(self._stats_str))
+        raise InsufficientProxiesError('No proxies from {} ready with {} strategy {}{}'
+            .format(len(ready_proxies), strategy, request_ident and request_ident + ' ' or '',
+                    self._stats_str))
 
     def _get_random(self, proxies):
         try:

@@ -7,7 +7,7 @@ from requests.cookies import RequestsCookieJar
 from requests.adapters import HTTPAdapter
 from requests.sessions import Session
 from requests.utils import select_proxy, urldefragauth
-from gevent import Timeout, sleep
+from gevent import sleep
 
 from . import proxylist
 from .proxylist import ProxyMaxRetriesExceeded, InsufficientProxiesError
@@ -154,6 +154,18 @@ class ProxyListMixin:
         self._persist_addr = None
         super().__init__(**kwargs)
 
+    @staticmethod
+    def _pop_response_match(key, params):
+        # TODO: allow superproxy to pass serveral headers for this mechanics
+        try:
+            match = params.pop(key)
+        except KeyError:
+            return None
+        if isinstance(match, (tuple, list)):
+            return lambda resp: any(cb(resp) for cb in match)
+        # assert callable(match)
+        return match
+
     def _proxylist_call(self, func, *args, **kwargs):
         if kwargs.get('proxies'):
             raise ValueError('proxies argument is not empty, '
@@ -164,10 +176,11 @@ class ProxyListMixin:
 
         strategy = kwargs.pop('proxy_strategy', self.proxylist._get_fastest)
         max_retries = kwargs.pop('proxy_max_retries', PROXY_MAX_RETRIES_DEFAULT)
-        success_response = kwargs.pop('proxy_success_response', None)
+        success_response = self._pop_response_match('proxy_success_response', kwargs)
         success_timeout = kwargs.pop('proxy_success_timeout', None)
+        fail_response = self._pop_response_match('proxy_fail_response', kwargs)
         fail_timeout = kwargs.pop('proxy_fail_timeout', None)
-        rest_response = kwargs.pop('proxy_rest_response', None)
+        rest_response = self._pop_response_match('proxy_rest_response', kwargs)
         rest_timeout = kwargs.pop('proxy_rest_timeout', None)
         request_ident = kwargs.pop('proxy_request_ident', None)
         if rest_response and not rest_timeout:
@@ -186,7 +199,7 @@ class ProxyListMixin:
             try:
                 proxy = self.proxylist.get(strategy, exclude=exclude, persist=persist_addr,
                                            request_ident=request_ident, **proxy_kwargs)
-            except (ProxyMaxRetriesExceeded, InsufficientProxiesError, Timeout) as exc:
+            except (ProxyMaxRetriesExceeded, InsufficientProxiesError) as exc:
                 if allow_no_proxy:
                     proxy = None
                     kwargs['proxies'] = None
@@ -219,7 +232,9 @@ class ProxyListMixin:
                     if persist is True:
                         self._persist_addr = None
                     exclude.append(proxy.addr)
-                elif not success_response or success_response(resp):
+
+                elif ((not fail_response or not fail_response(resp)) and
+                      not success_response or success_response(resp)):
                     self.proxylist.success(proxy, timeout=success_timeout, resp=resp,
                                            request_ident=request_ident)
                     if persist is True:
@@ -291,7 +306,7 @@ class SuperProxySession(ConfigurableSession):
         self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs)
                              if k.startswith('proxy_')}
         self._persist_addr = None
-        adapter = SimpleHTTPSProxyManagerHTTPAdapter()
+        adapter = PlainHTTPSProxyManagerHTTPAdapter()
         kwargs['mount'] = {'http://': adapter, 'https://': adapter}
         kwargs['proxies'] = {'http': superproxy_url, 'https': superproxy_url}
         super().__init__(**kwargs)
@@ -328,7 +343,7 @@ class SuperProxySession(ConfigurableSession):
         return resp
 
 
-class SimpleHTTPSProxyManager(ProxyManager):
+class PlainHTTPSProxyManager(ProxyManager):
     """
     Proxy manager that is NOT USING "CONNECT" for https urls.
     """
@@ -343,14 +358,14 @@ class SimpleHTTPSProxyManager(ProxyManager):
         return super(ProxyManager, self).urlopen(method, url, redirect=redirect, **kw)
 
 
-class SimpleHTTPSProxyManagerHTTPAdapter(HTTPAdapter):
+class PlainHTTPSProxyManagerHTTPAdapter(HTTPAdapter):
     """
     HTTP adapter that is NOT USING "CONNECT" for https urls.
     """
     def proxy_manager_for(self, proxy, **proxy_kwargs):
         if (proxy not in self.proxy_manager and
            not proxy.lower().startswith('socks')):
-            manager = self.proxy_manager[proxy] = SimpleHTTPSProxyManager(
+            manager = self.proxy_manager[proxy] = PlainHTTPSProxyManager(
                 proxy,
                 proxy_headers=self.proxy_headers(proxy),
                 num_pools=self._pool_connections,
