@@ -39,16 +39,11 @@ class SharedProxyManagerHTTPAdapter(HTTPAdapter):
 class ConfigurableSession(Session):
     """
     Helper class that allows to pass some parameters to __init__
-    instead of settings them later.
-    Extends with request_wait, retries,
-    forgetful_cookies, random_user_agent params.
-    Allows to set default timeout for each request and
-    override allow_redirects.
+    instead of setting them later and extends with common functionality.
     """
     def __init__(self, request_wait=0, retry_response=None, retry_exception=None,
                  retry_count=0, retry_wait=0, forgetful_cookies=False,
-                 enforce_content_length=False,
-                 random_user_agent=False, **kwargs):
+                 enforce_content_length=False, random_user_agent=False, **kwargs):
         super().__init__()
 
         # to specify ordering this may be OrderedDict
@@ -56,14 +51,10 @@ class ConfigurableSession(Session):
         for prefix, adapter in mount.items():
             self.mount(prefix, adapter)
 
-        _configurable_attrs = [
-            'headers', 'auth', 'proxies', 'hooks',
-            'params', 'stream', 'verify', 'cert', 'max_redirects',
-            'trust_env', 'cookies',
-            'timeout', 'allow_redirects'
-        ]
         for k, v in kwargs.items():
-            if k in _configurable_attrs:
+            if k in ('headers', 'auth', 'proxies', 'hooks', 'params', 'stream',
+                     'verify', 'cert', 'max_redirects', 'trust_env', 'cookies',
+                     'timeout', 'allow_redirects'):
                 setattr(self, k, v)
             else:
                 raise TypeError('Unknown keyword argument: %s', k)
@@ -111,7 +102,10 @@ class ConfigurableSession(Session):
                 resp = super().request(*args, **kwargs)
                 if self.enforce_content_length and resp.raw.length_remaining not in (0, None):
                     # NOTE: This param may be set in urllib3.response.HTTPResponse,
-                    # but there is no possibility to pass it to requests.adapters.HTTPAdapter
+                    # but there is no possibility to pass it to requests.adapters.HTTPAdapter.
+                    # Also we couldn't reproduce success response if Content-Length is greater
+                    # than real content body (requests fails with ReadTimeout error), but
+                    # somehow we manage to get such responses from proxies.
                     raise IncompleteRead(resp.raw._fp_bytes_read, resp.raw.length_remaining)
             except Exception as exc:
                 retry_wait = retry_exception and retry_exception(exc)
