@@ -119,8 +119,8 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
 
     def create_session(self, proxylist, **params):
         # Lazy import requests because of gevent.monkey_patch
-        from .requests import ConfigurableSession, ProxyListSession
-        params.setdefault('timeout', 10)
+        from .requests import ConfigurableSession, ProxyListSession, TIMEOUT_DEFAULT
+        params.setdefault('timeout', TIMEOUT_DEFAULT)
         params.setdefault('random_user_agent', True)
         if proxylist:
             params.setdefault('allow_no_proxy', True)

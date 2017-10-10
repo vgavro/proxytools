@@ -97,6 +97,7 @@ class WSGISuperProxy:
     def __init__(self, proxylist, **session_kwargs):
         from .requests import ProxyListSession
         self.session = ProxyListSession(proxylist, forgetful_cookies=True,
+                                        enforce_content_length=True,
                                         **session_kwargs)
         self.proxylist = proxylist
 

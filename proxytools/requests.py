@@ -3,6 +3,7 @@ from datetime import datetime
 from collections import OrderedDict
 
 from urllib3.poolmanager import ProxyManager
+from urllib3.exceptions import IncompleteRead
 from requests.cookies import RequestsCookieJar
 from requests.adapters import HTTPAdapter
 from requests.sessions import Session
@@ -46,6 +47,7 @@ class ConfigurableSession(Session):
     """
     def __init__(self, request_wait=0, retry_response=None, retry_exception=None,
                  retry_count=0, retry_wait=0, forgetful_cookies=False,
+                 enforce_content_length=False,
                  random_user_agent=False, **kwargs):
         super().__init__()
 
@@ -77,6 +79,8 @@ class ConfigurableSession(Session):
             assert 'cookies' not in kwargs
             self.cookies = ForgetfulCookieJar()
 
+        self.enforce_content_length = enforce_content_length
+
         if random_user_agent:
             self.headers['User-Agent'] = get_random_user_agent(random_user_agent)
 
@@ -105,6 +109,10 @@ class ConfigurableSession(Session):
 
             try:
                 resp = super().request(*args, **kwargs)
+                if self.enforce_content_length and resp.raw.length_remaining not in (0, None):
+                    # NOTE: This param may be set in urllib3.response.HTTPResponse,
+                    # but there is no possibility to pass it to requests.adapters.HTTPAdapter
+                    raise IncompleteRead(resp.raw._fp_bytes_read, resp.raw.length_remaining)
             except Exception as exc:
                 retry_wait = retry_exception and retry_exception(exc)
                 if retry_wait and retry < retry_count:
