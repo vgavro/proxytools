@@ -315,8 +315,10 @@ class WSGISuperProxy:
         try:
             resp = self.session.request(method, url, data=data, headers=headers, **kwargs)
         except BaseException as exc:
-            logger.error('%r', exc)
-            # logger.exception('%r', exc)
+            if isinstance(exc, (ProxyListError, KeyboardInterrupt)):
+                logger.error('%r', exc)
+            else:
+                logger.exception('%r', exc)
             return self.resp(start_resp, codes.INTERNAL_SERVER_ERROR, repr(exc),
                              headers=[('X-Superproxy-Error', exc.__class__.__name__)])
 

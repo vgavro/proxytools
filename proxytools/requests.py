@@ -10,8 +10,7 @@ from requests.sessions import Session
 from requests.utils import select_proxy, urldefragauth
 from gevent import sleep
 
-from . import proxylist
-from .proxylist import ProxyMaxRetriesExceeded, InsufficientProxiesError
+from .exceptions import ProxyListError, ProxyMaxRetriesExceeded
 from .superproxy import SUPERPROXY_REQUEST_HEADERS
 from .utils import repr_response, get_random_user_agent
 
@@ -201,7 +200,7 @@ class ProxyListMixin:
             try:
                 proxy = self.proxylist.get(strategy, exclude=exclude, persist=persist_addr,
                                            request_ident=request_ident, **proxy_kwargs)
-            except (ProxyMaxRetriesExceeded, InsufficientProxiesError) as exc:
+            except ProxyListError as exc:
                 if allow_no_proxy:
                     proxy = None
                     kwargs['proxies'] = None
@@ -236,7 +235,7 @@ class ProxyListMixin:
                     exclude.append(proxy.addr)
 
                 elif ((not fail_response or not fail_response(resp)) and
-                      not success_response or success_response(resp)):
+                      (not success_response or success_response(resp))):
                     self.proxylist.success(proxy, timeout=success_timeout, resp=resp,
                                            request_ident=request_ident)
                     if persist is True:
@@ -293,14 +292,16 @@ class ProxyListSession(ProxyListMixin, ConfigurableSession):
 class SuperProxySession(ConfigurableSession):
     """
     Session that is using SuperProxy daemon as proxy.
-    Accepts arguments same as ProxyListSession and transfer
-    parameters as X-Superproxy-* headers.
-    NOTE: We're connecting to SuperProxy as plain proxy,
-    even with https urls, this allows to validate responses on SuperProxy
-    and transfer required X-Superproxy-* headers.
-    Responses validation is highly recommended, as proxies may return
-    "NOT WORKING" with 200 status for example, and we must fail
-    such proxies and add them to blacklist.
+    Accepts arguments same as ProxyListSession and transfer parameters as X-Superproxy-* headers.
+    NOTE: We're connecting to SuperProxy as plain proxy, even with https urls,
+    this allows to validate responses on SuperProxy and transfer meta headers for each request.
+    With response vaildation we may set proxies to rest state for some timeout
+    (for example on rate limiting) or fail state.
+    Success responses validation is highly recommended for http requests (not https),
+    as plain proxy may return "NOT WORKING" with 200 status for example,
+    and we must fail such proxies and add them to blacklist.
+    As SuperProxy connects to proxies using CONNECT method for https urls,
+    you may not validate success responses for https (certificate validation enabled by default).
     """
     timeout = TIMEOUT_DEFAULT * PROXY_MAX_RETRIES_DEFAULT
 
@@ -334,10 +335,10 @@ class SuperProxySession(ConfigurableSession):
                 SUPERPROXY_REQUEST_HEADERS[key][1](value)
 
         resp = super().request(method, url, headers=headers, **kwargs)
-        error_name = resp.headers.get('X-Superproxy-Error')
-        if error_name in ('InsufficientProxiesError', 'ProxyMaxRetriesExceeded'):
-            raise getattr(proxylist, error_name)(
-                resp.text[len(error_name) + 3:len(resp.text) - 3])
+        error_cls_name = resp.headers.get('X-Superproxy-Error')
+        if error_cls_name in ProxyListError.cls_map:
+            error_arg = resp.text[len(error_cls_name) + 2:len(resp.text) - 3]
+            raise ProxyListError.cls_map[error_cls_name](error_arg)
 
         if persist:
             self._persist_addr = resp.headers.get('X-Superproxy-Addr') or None
