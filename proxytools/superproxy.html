@@ -347,6 +347,12 @@
         </el-table-column>
         <el-table-column label="Addr" prop="addr">
         </el-table-column>
+        <el-table-column label="Country" prop="country" width="75px">
+          <template scope="{row}">
+            <span :class="row.country ? 'flag ' + row.country.toLowerCase() : ''"></span>
+            {{row.country}}
+          </template>
+        </el-table-column>
       </el-table>
       <el-table stripe border :data="waiting"  v-show="type === 'waiting'">
         <el-table-column label="Since" prop="since" :formatter="(w) => w.since.fromNow()">
@@ -393,6 +399,7 @@
         reason: h[2],
         request_ident: h[3],
         addr: (h.length > 4) ? h[4] : null,
+        country: (h.length > 4) ? h[5] : null,
       }
     }
 

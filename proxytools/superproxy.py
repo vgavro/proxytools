@@ -199,7 +199,7 @@ class WSGISuperProxy:
                                                (h[3] and token in h[3]))  # request_ident
                                                for token in token_group)
                                            for token_group in search))):
-                        history.append(tuple(h) + (p.addr,))
+                        history.append(tuple(h) + (p.addr, p.country))
 
             history.sort(key=lambda h: h[0], reverse=True)
             resp = self.proxylist.json_encoder.dumps({
