@@ -6,7 +6,7 @@ import json
 import os.path
 import atexit
 
-from gevent import GreenletExit, Timeout, sleep, spawn
+from gevent import Timeout, sleep, spawn
 from gevent.event import Event
 from gevent.thread import get_ident
 
@@ -154,7 +154,7 @@ class ProxyList:
 
         elif proxy.blacklist:
             # loading
-            self.blacklist(proxy, load=True)
+            self.blacklist(proxy, load=load)
 
         elif not load and proxy.fail_at and (not proxy.success_at or
                                              proxy.fail_at > proxy.success_at):
@@ -302,7 +302,7 @@ class ProxyList:
                     self.proxy_ready.wait(None if wait is True else wait)
                 except Timeout:
                     continue
-                except GreenletExit:
+                except:
                     del self.waiting[ident]
                     raise
         if ident in self.waiting:

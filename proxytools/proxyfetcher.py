@@ -124,6 +124,7 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
         params.setdefault('random_user_agent', True)
         if proxylist:
             params.setdefault('allow_no_proxy', True)
+            params.setdefault('proxy_request_ident', 'fetch:{}'.format(self.name))
             session = ProxyListSession(proxylist, **params)
         else:
             session = ConfigurableSession(**params)

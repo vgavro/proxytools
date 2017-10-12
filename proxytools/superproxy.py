@@ -97,7 +97,7 @@ class WSGISuperProxy:
     def __init__(self, proxylist, **session_kwargs):
         from .requests import ProxyListSession
         self.session = ProxyListSession(proxylist, forgetful_cookies=True,
-                                        enforce_content_length=False,
+                                        enforce_content_length=True,
                                         **session_kwargs)
         self.proxylist = proxylist
 
@@ -314,11 +314,6 @@ class WSGISuperProxy:
 
         try:
             resp = self.session.request(method, url, data=data, headers=headers, **kwargs)
-            # TODO: debugging incomplete responses from instagram
-            logger.debug('Ident: %s url: %s, length_remaining(%s), fp_bytes_read(%s), tell(%s) '
-                         'content_length(%s)', kwargs.get('proxy_request_ident'), url,
-                         resp.raw.length_remaining, resp.raw._fp_bytes_read,
-                         resp.raw.tell(), resp.headers.get('Content-Length'))
         except BaseException as exc:
             logger.error('%r', exc)
             # logger.exception('%r', exc)
