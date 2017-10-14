@@ -8,6 +8,7 @@ from requests.status_codes import _codes, codes
 from pytimeparse.timeparse import timeparse
 
 from .models import PROXY_RESULT_TYPE
+from .exceptions import ProxyListError
 from .utils import ResponseMatch
 
 
