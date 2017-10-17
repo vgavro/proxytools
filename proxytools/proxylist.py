@@ -10,6 +10,7 @@ from gevent import Timeout, sleep, spawn
 from gevent.event import Event
 from gevent.thread import get_ident
 
+from .exceptions import InsufficientProxies
 from .models import Proxy, PROXY_RESULT_TYPE
 from .proxyfetcher import ProxyFetcher
 from .utils import JSONEncoder, CompositeContains, repr_response, import_string
@@ -20,14 +21,6 @@ logger = logging.getLogger(__name__)
 class GET_STRATEGY(enum.Enum):
     RANDOM = '_get_random'
     FASTEST = '_get_fastest'
-
-
-class InsufficientProxiesError(RuntimeError):
-    pass
-
-
-class ProxyMaxRetriesExceeded(RuntimeError):
-    pass
 
 
 class ProxyList:
@@ -131,8 +124,8 @@ class ProxyList:
 
     def maybe_update(self):
         if not len(self.active_proxies) and not self.fetcher:
-            raise InsufficientProxiesError('No proxies and no fetcher {}'
-                                           .format(self._stats_str))
+            raise InsufficientProxies('No proxies and no fetcher {}'
+                                      .format(self._stats_str))
         if self.fetcher and self.fetcher.ready and self.need_update:
             now = datetime.utcnow()
             if (self.fetcher.started_at is None or
@@ -237,14 +230,15 @@ class ProxyList:
             sleep(0)  # switch to other greenlet for fair play
 
     def rest(self, proxy, timeout, resp=None, request_ident=None, debug=False):
+        proxy.success_at = datetime.utcnow()
+        proxy.fail = 0
         proxy.in_use -= 1
         assert proxy.in_use >= 0
-        now = datetime.utcnow()
-        proxy.set_rest_till(now + timedelta(seconds=timeout))
+        proxy.set_rest_till(proxy.success_at + timedelta(seconds=timeout))
         self._proxy_ready_notify_at(proxy.rest_till)
         reason = resp is not None and repr_response(resp, full=debug) or None
         if self.history:
-            proxy.set_history(now, PROXY_RESULT_TYPE.REST, reason,
+            proxy.set_history(proxy.success_at, PROXY_RESULT_TYPE.REST, reason,
                               request_ident, self.history)
         logger.debug('Rest: %s%s%s till %s %s', proxy.addr,
                      request_ident and ' ' + request_ident or '',
@@ -283,7 +277,7 @@ class ProxyList:
             if ready_proxies:
                 break
             elif not wait or ((not self.fetcher or self.fetcher.ready) and not self.in_use):
-                raise InsufficientProxiesError('No ready proxies {} {}{}'
+                raise InsufficientProxies('No ready proxies {} {}{}'
                     .format(proxy_params, request_ident and request_ident + ' ' or '',
                             self._stats_str))
             else:
@@ -296,7 +290,7 @@ class ProxyList:
                 elif (wait is not True and
                      (datetime.utcnow() - self.waiting[ident]['since']).total_seconds() > wait):
                     del self.waiting[ident]
-                    raise InsufficientProxiesError('Ready proxies wait timeout({}) {} {}{}'
+                    raise InsufficientProxies('Ready proxies wait timeout({}) {} {}{}'
                         .format(wait, proxy_params, request_ident and request_ident + ' ' or '',
                                 self._stats_str))
                 try:
@@ -318,7 +312,7 @@ class ProxyList:
         if proxy:
             proxy.in_use += 1
             return proxy
-        raise InsufficientProxiesError('No proxies from {} ready with {} strategy {}{}'
+        raise InsufficientProxies('No proxies from {} ready with {} strategy {}{}'
             .format(len(ready_proxies), strategy, request_ident and request_ident + ' ' or '',
                     self._stats_str))
 
