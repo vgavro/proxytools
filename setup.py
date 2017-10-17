@@ -27,7 +27,11 @@ requires = [
     'pytest-catchlog',
     'pytest-cov',
     'pytest-flake8',
-    # 'mem_top', # for memory leak debug
+
+    # for memory leak debug
+    # 'mem_top',  # see /mem_top on superproxy
+    # 'pillow',  # dozer requirement
+    # 'dozer',  # see /_dozer on superproxy
 ]
 
 setup(

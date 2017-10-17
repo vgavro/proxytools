@@ -187,9 +187,12 @@ def fetcher(config, show_list, fetchers, check, pool_size,
 
 
 @cli(
-    option('-l', '--listen', default=None),
+    option('-l', '--listen', default=None,
+        help='Listen host:port (defaults "0.0.0.0:8088").'),
+    option('-p', '--pool', 'pool_size', type=int, default=None,
+        help='Pool size (defaults "500").'),
 )
-def superproxy(config, listen):
+def superproxy(config, listen, pool_size):
     import signal
     import sys
     # for graceful shutdown with saving proxies on atexit
@@ -208,9 +211,12 @@ def superproxy(config, listen):
     conf = config.get('superproxy', {})
     proxylist = ProxyList(fetcher=fetcher, **conf.pop('proxylist', {}))
 
-    if not listen:
-        listen = conf.pop('listen', '0.0.0.0:8088')
+    listen = listen or conf.pop('listen', '0.0.0.0:8088')
     iface, port = listen.split(':')
-    server = WSGIServer((iface, int(port)), WSGISuperProxy(proxylist),
-                        spawn=Pool(conf.pop('pool_size', 500)))
+    app = WSGISuperProxy(proxylist)
+    if conf.pop('dozer', False):
+        from dozer import Dozer
+        app = Dozer(app)
+    server = WSGIServer((iface, int(port)), app,
+                        spawn=Pool(pool_size or conf.pop('pool_size', 500)))
     server.serve_forever()
