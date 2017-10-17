@@ -14,7 +14,7 @@ from .utils import ResponseMatch
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+ALLOWED_METHODS = ('GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS')
 
 HOP_BY_HOP_HEADERS = frozenset([
     'connection', 'keep-alive', 'proxy-authenticate',
@@ -116,6 +116,15 @@ class WSGISuperProxy:
     def resolve_local(self, environ, start_resp):
         if environ['PATH_INFO'] in ('/', '/superproxy'):
             return self.resp(start_resp, codes.FOUND, headers=[('Location', '/superproxy/')])
+
+        elif environ['PATH_INFO'] == '/mem_top':
+            # memory-leak debug
+            try:
+                from mem_top import mem_top
+            except ImportError as exc:
+                return self.resp(start_resp, codes.NOT_FOUND, repr(exc))
+            else:
+                return self.resp(start_resp, codes.OK, str(mem_top()))
 
         elif environ['PATH_INFO'].startswith('/superproxy/'):
             # TODO: dirty hack, and only for debug, cache it later and replace only extension

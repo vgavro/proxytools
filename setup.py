@@ -27,6 +27,7 @@ requires = [
     'pytest-catchlog',
     'pytest-cov',
     'pytest-flake8',
+    # 'mem_top', # for memory leak debug
 ]
 
 setup(

@@ -197,6 +197,7 @@ def superproxy(config, listen):
     signal.signal(signal.SIGQUIT, lambda *args: sys.exit(0))
 
     from gevent.pywsgi import WSGIServer
+    from gevent.pool import Pool
     from .superproxy import WSGISuperProxy
     from .proxylist import ProxyList
 
@@ -210,5 +211,6 @@ def superproxy(config, listen):
     if not listen:
         listen = conf.pop('listen', '0.0.0.0:8088')
     iface, port = listen.split(':')
-    server = WSGIServer((iface, int(port)), WSGISuperProxy(proxylist))
+    server = WSGIServer((iface, int(port)), WSGISuperProxy(proxylist),
+                        spawn=Pool(conf.pop('pool_size', 500)))
     server.serve_forever()
