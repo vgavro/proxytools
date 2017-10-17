@@ -185,6 +185,7 @@ class ProxyListMixin:
         rest_response = self._pop_response_match('proxy_rest_response', kwargs)
         rest_timeout = kwargs.pop('proxy_rest_timeout', None)
         request_ident = kwargs.pop('proxy_request_ident', None)
+        debug = kwargs.pop('proxy_debug', False)
         if rest_response and not rest_timeout:
             raise ValueError('rest_response must be used with rest_timeout > 0')
         persist = kwargs.pop('proxy_persist', False)
@@ -218,7 +219,7 @@ class ProxyListMixin:
                 if not proxy:
                     raise
                 self.proxylist.fail(proxy, timeout=fail_timeout, exc=exc,
-                                    request_ident=request_ident)
+                                    request_ident=request_ident, debug=debug)
                 if persist is True:
                     self._persist_addr = None
                 exclude.append(proxy.addr)
@@ -230,7 +231,7 @@ class ProxyListMixin:
                     return resp
                 if rest_response and rest_response(resp):
                     self.proxylist.rest(proxy, timeout=rest_timeout, resp=resp,
-                                        request_ident=request_ident)
+                                        request_ident=request_ident, debug=debug)
                     if persist is True:
                         self._persist_addr = None
                     exclude.append(proxy.addr)

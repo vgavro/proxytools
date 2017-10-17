@@ -46,6 +46,7 @@ SUPERPROXY_REQUEST_HEADERS = {
     'proxy_rest_response': (ResponseMatch._from_superproxy_header,
                             lambda x: x._to_superproxy_header()),
     'proxy_rest_timeout': (int, str),
+    'proxy_debug': (lambda x: bool(int(x)), lambda x: str(int(x))),
 }
 
 
