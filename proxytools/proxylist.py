@@ -142,14 +142,15 @@ class ProxyList:
 
             if self.fetcher and self.fetcher.ready and self.need_update:
                 logger.info('Start fetch %s', self._stats_str)
-                self.fetcher()
+                spawn(self.fetcher)  # do not block current greenlet
 
             if self.checker and self.recheck_timeout:
+                recheck_proxies = []
                 for p in tuple(self.active_proxies.values()):
-                    if ((not p.used_at or
-                         (now - p.used_at).total_seconds() > self.recheck_timeout) and
-                       p.addr not in self.checker._processing):
-                        self.checker(p)
+                    if (not p.used_at or
+                       (now - p.used_at).total_seconds() > self.recheck_timeout):
+                        recheck_proxies.append(p)
+                spawn(self.checker, *recheck_proxies)  # do not block current greenlet
 
             if self.blacklist_timeout:
                 for p in tuple(self.blacklist_proxies.values()):
