@@ -141,6 +141,7 @@ class WSGISuperProxy:
                     active += 1
                 in_use += p.in_use
 
+            checker = self.proxylist.checker
             fetcher = self.proxylist.fetcher
             resp = self.proxylist.json_encoder.dumps({
                 'rest': rest,
@@ -149,8 +150,10 @@ class WSGISuperProxy:
                 'in_use': in_use,
                 'waiting': len(self.proxylist.waiting),
                 'need_update': self.proxylist.need_update,
+                'updated_at': self.proxylist.updated_at,
+                'checker': bool(checker),
+                'checker_processing': len(checker._processing),
                 'fetcher': bool(fetcher),
-                'fetcher_checker': bool(fetcher and fetcher.checker),
                 'fetcher_started_at': fetcher and fetcher.started_at,
                 'fetcher_ready': fetcher and fetcher.ready,
             })
@@ -232,7 +235,7 @@ class WSGISuperProxy:
                 'unblacklist': lambda p: self.proxylist.unblacklist(p),
                 'reset_rest_till': lambda p: p.__setattr__('rest_till', None),
                 # avoid "can't assign to lambda" with __setattr__ here
-                'recheck': lambda p: self.proxylist.fetcher.checker(p),
+                'recheck': lambda p: self.proxylist.checker(p),
             }
 
             if data['action'] == 'fetch':
@@ -252,7 +255,7 @@ class WSGISuperProxy:
 
             elif data['action'] in proxy_actions:
                 if data['action'] == 'recheck':
-                    if (not self.proxylist.fetcher or not self.proxylist.fetcher.checker):
+                    if (not self.proxylist.checker):
                         return error('No checker configured')
 
                 if 'addr' in data:

@@ -23,11 +23,7 @@ class ProxyFetcher(AbstractProxyProcessor):
             checker = ProxyChecker(**checker)
         self.checker = checker
         if self.checker:
-            # TODO: NOTE!!! this is not set on lazy add setting
-            # implement __setattr__ (or other magic method) for setting
-            # proxyfetcher.proxy after initialization
-            # to set it also on checker
-            self.checker.proxy = self.checked_proxy
+            self.checker.proxy = self.proxy
 
         if fetchers == '*':
             fetchers = self.registry
@@ -59,11 +55,6 @@ class ProxyFetcher(AbstractProxyProcessor):
                 fetcher.workers.join()
             if self.checker:
                 self.checker.workers.join()
-
-    def checked_proxy(self, proxy):
-        # proxy after checking
-        # TODO: where to filter?
-        self.proxy(proxy)
 
     def process_proxy(self, proxy):
         if proxy.url not in self.blacklist:

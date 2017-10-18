@@ -146,7 +146,7 @@
           </p>
           <p>
             Need update: {{status.need_update}}, Fetcher: {{status.fetcher}},
-            Checker: {{status.fetcher_checker}},
+            Checker: {{status.checker}}{{status.checker && ` (${status.checker_processing})`}},
           </p>
           <p>
             Fetch started at: {{status.fetcher_started_at | formatTime}},

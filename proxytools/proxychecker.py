@@ -33,12 +33,12 @@ class ProxyChecker(AbstractProxyProcessor):
         self.https_force_check = https_force_check
 
         # To avoid parallel processing of same proxy from different fetchers
-        self._processing = []
+        self._processing = set()
 
     def __call__(self, *proxies, join=False):
         for proxy in proxies:
             if proxy.addr not in self._processing and proxy.addr not in self.blacklist:
-                self._processing.append(proxy.addr)
+                self._processing.add(proxy.addr)
                 self.spawn(self.worker, proxy)
         if join:
             self.workers.join()
@@ -53,6 +53,7 @@ class ProxyChecker(AbstractProxyProcessor):
         if proxy.addr in self.blacklist:
             # because blacklist may be changed after __call__
             logger.debug('Check skipped: %s', proxy.addr)
+            self._processing.remove(proxy.addr)
             return
         # Creating session each time not to hit [Errno 24] Too many open files
         session = self.create_session()

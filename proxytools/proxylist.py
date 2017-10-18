@@ -13,6 +13,7 @@ from gevent.thread import get_ident
 from .exceptions import InsufficientProxies
 from .models import Proxy, PROXY_RESULT_TYPE
 from .proxyfetcher import ProxyFetcher
+from .proxychecker import ProxyChecker
 from .utils import JSONEncoder, CompositeContains, repr_response, import_string
 
 logger = logging.getLogger(__name__)
@@ -24,9 +25,11 @@ class GET_STRATEGY(enum.Enum):
 
 
 class ProxyList:
-    def __init__(self, fetcher=None, min_size=50, max_fail=3, max_simultaneous=2,
+    def __init__(self, fetcher=None, checker=None, min_size=50, max_fail=3, max_simultaneous=2,
                  success_timeout=0, fail_timeout=0, history=0, update_on=None,
-                 update_timeout=10 * 60, filename=None, atexit_save=False, json_encoder={}):
+                 update_timeout=30 * 60, recheck_timeout=3 * 60 * 60,
+                 blacklist_timeout=24 * 60 * 60,
+                 filename=None, atexit_save=False, json_encoder={}):
         if min_size <= 0:
             raise ValueError('min_size must be positive')
         self.min_size = min_size
@@ -48,18 +51,28 @@ class ProxyList:
         # Dictionary to use shared connection pools between sessions
         self.proxy_pool_manager = {}
 
-        self.update_timeout = timedelta(seconds=update_timeout)
+        self.blacklist_timeout = blacklist_timeout
+        self.update_timeout = update_timeout
         if isinstance(update_on, str):
             update_on = import_string(update_on)
         self.update_on = update_on
+        self.updated_at = None
+
+        if isinstance(checker, dict):
+            checker = ProxyChecker(**checker)
+        if checker:
+            checker.proxy = self.proxy
+        self.checker = checker
+        self.recheck_timeout = recheck_timeout
 
         if isinstance(fetcher, dict):
             fetcher = ProxyFetcher(proxylist=self, **fetcher)
         if fetcher:
             fetcher.proxy = self.proxy
-            if fetcher.checker:
-                fetcher.blacklist = CompositeContains(self.active_proxies,
-                                                      self.blacklist_proxies)
+            if self.checker:
+                fetcher.checker = self.checker
+            fetcher.blacklist = CompositeContains(self.active_proxies,
+                                                  self.blacklist_proxies)
         self.fetcher = fetcher
 
         if isinstance(json_encoder, dict):
@@ -69,16 +82,16 @@ class ProxyList:
         if filename and os.path.exists(filename):
             self.load(filename)
         if atexit_save:
-            # NOTE: atexit works only on SIGINT (not SIGTERM or SIGKILL)
+            # NOTE: atexit works only on SIGINT (not SIGTERM)
+            # You may also want to use something like:
+            # signal.signal(signal.SIGTERM, lambda *args: sys.exit(0))
             if atexit_save is True:
                 assert filename
                 atexit_save = filename
             atexit.register(self.save, atexit_save)
         self.atexit_save = atexit_save
 
-        if self.need_update and fetcher and fetcher.ready:
-            logger.info('Start fetch %s', self._stats_str)
-            fetcher()
+        self.maybe_update()
 
     @property
     def need_update(self):
@@ -122,24 +135,31 @@ class ProxyList:
                 self._proxy_ready_at = None
             self.proxy_ready.set()
 
-    def maybe_update(self):
-        if not len(self.active_proxies) and not self.fetcher:
-            raise InsufficientProxies('No proxies and no fetcher {}'
-                                      .format(self._stats_str))
-        if self.fetcher and self.fetcher.ready and self.need_update:
-            now = datetime.utcnow()
-            if (self.fetcher.started_at is None or
-               (self.fetcher.started_at + self.update_timeout) <= now):
+    def maybe_update(self, now=None):
+        now = now or datetime.utcnow()
+        if not self.updated_at or (now - self.updated_at).total_seconds() > self.update_timeout:
+            self.updated_at = now
+
+            if self.fetcher and self.fetcher.ready and self.need_update:
                 logger.info('Start fetch %s', self._stats_str)
                 self.fetcher()
-            else:
-                logger.warning('Update needed, but timeout not expired (%s), %s',
-                               now - self.fetcher.started_at, self._stats_str)
+
+            if self.checker and self.recheck_timeout:
+                for p in tuple(self.active_proxies.values()):
+                    if ((not p.used_at or
+                         (now - p.used_at).total_seconds() > self.recheck_timeout) and
+                       p.addr not in self.checker._processing):
+                        self.checker(p)
+
+            if self.blacklist_timeout:
+                for p in tuple(self.blacklist_proxies.values()):
+                    if (now - p.used_at).total_seconds() > self.blacklist_timeout:
+                        del self.blacklist_proxies[p.addr]
 
     def proxy(self, proxy, load=False):
         if proxy.addr in self.blacklist_proxies:
             if proxy.success_at and (not proxy.fail_at or proxy.success_at > proxy.fail_at):
-                # recheck - we should unblacklist it
+                # recheck or other greenlet success after blacklist - we should unblacklist it
                 self.unblacklist(proxy)
             else:
                 # fetch from other source
@@ -202,7 +222,7 @@ class ProxyList:
             del self.proxy_pool_manager[proxy.url]
         if not load:
             logger.debug('Blacklist: %s %s', proxy.addr, self._stats_str)
-        self.maybe_update()
+            self.maybe_update()
 
     def unblacklist(self, proxy):
         proxy.blacklist = False
@@ -269,6 +289,9 @@ class ProxyList:
             elif isinstance(strategy, enum.Enum):
                 strategy = getattr(self, strategy.value)
 
+        if not len(self.active_proxies) and not self.fetcher:
+            raise InsufficientProxies('No proxies and no fetcher {}'
+                                      .format(self._stats_str))
         self.maybe_update()
 
         ident = get_ident()  # unique integer id for greenlet
@@ -277,6 +300,7 @@ class ProxyList:
             if ready_proxies:
                 break
             elif not wait or ((not self.fetcher or self.fetcher.ready) and not self.in_use):
+                # fetcher.ready also returns false on checker processing
                 raise InsufficientProxies('No ready proxies {} {}{}'
                     .format(proxy_params, request_ident and request_ident + ' ' or '',
                             self._stats_str))
@@ -287,14 +311,16 @@ class ProxyList:
                     # Storing extra data for superproxy monitoring
                     self.waiting[ident] = dict(since=datetime.utcnow(),
                         request_ident=request_ident, params=proxy_params)
-                elif (wait is not True and
-                     (datetime.utcnow() - self.waiting[ident]['since']).total_seconds() > wait):
-                    del self.waiting[ident]
-                    raise InsufficientProxies('Ready proxies wait timeout({}) {} {}{}'
-                        .format(wait, proxy_params, request_ident and request_ident + ' ' or '',
-                                self._stats_str))
+                    delta = 0
+                elif wait is not True:
+                    delta = (datetime.utcnow() - self.waiting[ident]['since']).total_seconds()
+                    if delta >= wait:
+                        del self.waiting[ident]
+                        raise InsufficientProxies('Ready proxies wait timeout({}) {} {}{}'
+                            .format(wait, proxy_params,
+                                    request_ident and request_ident + ' ' or '', self._stats_str))
                 try:
-                    self.proxy_ready.wait(None if wait is True else wait)
+                    self.proxy_ready.wait(None if wait is True else wait - delta)
                 except Timeout:
                     continue
                 except:

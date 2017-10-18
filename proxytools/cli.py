@@ -206,10 +206,10 @@ def superproxy(config, listen, pool_size):
 
     # TODO: not properly working if no checker or fetcher specified in config?
     fetcher = config.get('proxyfetcher', {}).copy()
-    fetcher['checker'] = config.get('proxychecker', {})
+    checker = config.get('proxychecker', {}).copy()
 
     conf = config.get('superproxy', {})
-    proxylist = ProxyList(fetcher=fetcher, **conf.pop('proxylist', {}))
+    proxylist = ProxyList(fetcher=fetcher, checker=checker, **conf.pop('proxylist', {}))
 
     listen = listen or conf.pop('listen', '0.0.0.0:8088')
     iface, port = listen.split(':')

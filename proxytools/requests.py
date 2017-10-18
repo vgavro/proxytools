@@ -105,7 +105,9 @@ class ConfigurableSession(Session):
                     # Also we couldn't reproduce success response if Content-Length is greater
                     # than real content body (requests fails with ReadTimeout error), but
                     # somehow we manage to get such responses from proxies.
-                    raise IncompleteRead(resp.raw._fp_bytes_read, resp.raw.length_remaining)
+                    read, remaining = resp.raw._fp_bytes_read, resp.raw.length_remaining
+                    resp.close()
+                    raise IncompleteRead(read, remaining)
             except Exception as exc:
                 retry_wait = retry_exception and retry_exception(exc)
                 if retry_wait and retry < retry_count:
