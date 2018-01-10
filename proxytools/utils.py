@@ -66,11 +66,13 @@ class ResponseMatch:
 
 
 def create_country_name_to_alpha2():
+    # TODO: remove this and use native convert as this PR will be merged:
+    # https://github.com/TuneOSS/pycountry-convert/pull/43
     from pycountry import countries
-    from pycountry_convert.country_name_to_country_alpha2 \
-        import COUNTRY_NAME_TO_COUNTRY_ALPHA2
+    from pycountry_convert \
+        import WIKIPEDIA_COUNTRY_NAME_TO_COUNTRY_ALPHA2
 
-    rv = {k.upper(): v for k, v in COUNTRY_NAME_TO_COUNTRY_ALPHA2.items()}
+    rv = {k.upper(): v for k, v in WIKIPEDIA_COUNTRY_NAME_TO_COUNTRY_ALPHA2.items()}
     rv.update({
         'KOREA': 'KR',
         'REPUBLIC OF KOREA': 'KR',
@@ -248,8 +250,8 @@ def get_response_speed(resp, start_at):
     # TODO: resp.elapsed is checking headers read besides content read,
     # maybe it would be more clear to substract it,
     # as total speed depends also on connection time
-    assert resp.content  # just check that content is read
-    kb = int(resp.headers.get('Content-Length')) / 1024
+    # Note that content may be be read lazy on resp.content attribute, don't remove
+    kb = int(resp.headers.get('Content-Length', len(resp.content))) / 1024
     return round(kb / (time_.time() - start_at), 2)
 
 

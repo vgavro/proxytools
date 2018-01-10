@@ -7,7 +7,7 @@ requires = [
 
     # proxy fetcher utils
     'pycountry',
-    'pycountry-convert',
+    'pycountry-convert>=0.6',
     'pytimeparse',
     'lxml>=3.7.3',
     'cssselect>=1.0.1',  # lxml requirement for css selectors
