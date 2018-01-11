@@ -1,7 +1,13 @@
-apt-get install gocr imagemagick
+Highly configurable superproxy (daemon that serves as proxy to other proxies + admin interface), proxylist, proxyfetcher and proxychecker.
+Based on gevent and requests.
+
+TODO: Documentation, readme (README.md) and tests
+
+Proxyfetcher recommended dependencies:
+`apt-get install gocr imagemagick`
 
 Links:
-# some proxy checkers/fetchers
+# some poorly implemented proxy checkers/fetchers
 https://github.com/DanMcInerney/elite-proxy-finder
 https://github.com/stamparm/fetch-some-proxies
 https://github.com/acidvegas/proxytools/tree/master/proxytools
