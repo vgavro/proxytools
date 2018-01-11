@@ -4,6 +4,7 @@ requires = [
     # core
     'requests[socks]>=2.13',
     'gevent',
+    'netaddr',  # to allow/block ips to proxy
 
     # proxy fetcher utils
     'pycountry',

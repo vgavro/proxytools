@@ -368,6 +368,7 @@
   </template>
 
   <script src="//unpkg.com/moment@2.18.1/min/moment.min.js"></script>
+  <script src="//unpkg.com/js-cookie@2.2.0/src/js.cookie.js"></script>
   <script src="//unpkg.com/vue@2.4.4/dist/vue.min.js"></script>
   <script src="//unpkg.com/vue-router@2.7.0/dist/vue-router.min.js"></script>
   <script src="//unpkg.com/element-ui@1.4.6/lib/index.js"></script>
@@ -550,6 +551,8 @@
       },
 
       created () {
+        // hack to get Basic Authorization sent by browser to server from cookies
+        this.authorization = Cookies.get('Authorization')
         this.statusUpdate()
       },
 
@@ -602,8 +605,10 @@
                           .join('&'))
             delete params.qs
           }
+          params.headers = {}
+          if (this.authorization) params.headers['Authorization'] = this.authorization
           if (params.body) {
-            params.headers = {'Content-Type': 'application/json'}
+            params.headers['Content-Type'] = 'application/json'
             params.body = JSON.stringify(params.body)
           }
           return window.fetch(url, params).then(resp => {

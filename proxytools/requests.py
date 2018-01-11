@@ -339,9 +339,11 @@ class SuperProxySession(ConfigurableSession):
 
         resp = super().request(method, url, headers=headers, **kwargs)
         error_cls_name = resp.headers.get('X-Superproxy-Error')
-        if error_cls_name in ProxyListError.cls_map:
-            error_arg = resp.text[len(error_cls_name) + 2:len(resp.text) - 3]
-            raise ProxyListError.cls_map[error_cls_name](error_arg)
+        if error_cls_name:
+            if error_cls_name in ProxyListError.cls_map:
+                error_arg = resp.text[len(error_cls_name) + 2:len(resp.text) - 3]
+                raise ProxyListError.cls_map[error_cls_name](error_arg)
+            raise Exception(error_cls_name)
 
         if persist:
             self._persist_addr = resp.headers.get('X-Superproxy-Addr') or None
