@@ -138,8 +138,8 @@ class WSGISuperProxy:
             return self.proxy(environ, start_resp)
 
         # Routing locally otherwise
-        self.ensure_remote_addr(self.admin_allow_addrs, environ, start_resp)
-        self.ensure_authorization(self.admin_credentials, environ, start_resp, 'AUTHORIZATION')
+        self.ensure_remote_addr(environ, start_resp, self.admin_allow_addrs)
+        self.ensure_authorization(environ, start_resp, self.admin_credentials, 'AUTHORIZATION')
 
         if environ['PATH_INFO'] in ('/', '/superproxy'):
             return self.resp(start_resp, codes.FOUND, headers=[('Location', '/superproxy/')])
