@@ -206,9 +206,8 @@ def superproxy(config, listen, pool_size, dozer):
     from .superproxy import WSGISuperProxy
     from .proxylist import ProxyList
 
-    # TODO: not properly working if no checker or fetcher specified in config?
-    fetcher = config.get('proxyfetcher', {}).copy()
-    checker = config.get('proxychecker', {}).copy()
+    fetcher = config.get('proxyfetcher')
+    checker = config.get('proxychecker')
 
     conf = config.get('superproxy', {})
     proxylist = ProxyList(fetcher=fetcher, checker=checker, **conf.pop('proxylist', {}))

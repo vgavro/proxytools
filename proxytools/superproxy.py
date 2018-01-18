@@ -220,7 +220,7 @@ class WSGISuperProxy:
             'need_update': self.proxylist.need_update,
             'updated_at': self.proxylist.updated_at,
             'checker': bool(checker),
-            'checker_processing': len(checker._processing),
+            'checker_processing': checker and len(checker._processing),
             'fetcher': bool(fetcher),
             'fetcher_started_at': fetcher and fetcher.started_at,
             'fetcher_ready': fetcher and fetcher.ready,
