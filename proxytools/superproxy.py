@@ -327,7 +327,8 @@ class WSGISuperProxy:
                 proxy_actions[data['action']](proxy)
 
             elif 'status' in data or 'used_at_before' in data or 'used_at_after' in data:
-                status = data.get('status', '').split(',') or ('rest', 'active', 'blacklist')
+                status = ('status' in data and data['status'].split(',') or
+                          ('rest', 'active', 'blacklist'))
                 used_at_before = (data.get('used_at_before') and
                     datetime.utcnow() - timedelta(seconds=timeparse(data['used_at_before'])))
                 used_at_after = (data.get('used_at_after') and
@@ -338,7 +339,7 @@ class WSGISuperProxy:
                         continue
                     if used_at_after and p.used_at and used_at_after > p.used_at:
                         continue
-                    proxy_actions[data['action']](proxy)
+                    proxy_actions[data['action']](p)
 
             else:
                 return error('Required params not found: {}'.format(data))
