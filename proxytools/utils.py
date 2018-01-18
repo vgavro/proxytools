@@ -144,6 +144,7 @@ def gevent_monkey_patch():
 
     # https://github.com/gevent/gevent/issues/937
     # for error AttributeError: 'super' object has no attribute 'getpeername'
+    # NOTE: already fixed in pysocks master
     from socks import socksocket
     socksocket.get_proxy_peername = lambda self: self.getpeername()
 

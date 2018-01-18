@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from collections import OrderedDict
+from urllib.parse import urljoin
 
 from urllib3.poolmanager import ProxyManager
 from urllib3.exceptions import IncompleteRead
@@ -40,10 +41,14 @@ class ConfigurableSession(Session):
     Helper class that allows to pass some parameters to __init__
     instead of setting them later and extends with common functionality.
     """
-    def __init__(self, request_wait=0, retry_response=None, retry_exception=None,
-                 retry_count=0, retry_wait=0, forgetful_cookies=False,
-                 enforce_content_length=False, random_user_agent=False, **kwargs):
+    base_url = None
+
+    def __init__(self, base_url=None, request_wait=0, retry_response=None,
+                 retry_exception=None, retry_count=0, retry_wait=0,
+                 forgetful_cookies=False, enforce_content_length=False,
+                 random_user_agent=False, **kwargs):
         super().__init__()
+        self.base_url = base_url or self.base_url
 
         # to specify ordering this may be OrderedDict
         mount = kwargs.pop('mount', {})
@@ -74,7 +79,10 @@ class ConfigurableSession(Session):
         if random_user_agent:
             self.headers['User-Agent'] = get_random_user_agent(random_user_agent)
 
-    def request(self, *args, **kwargs):
+    def request(self, method, url, *args, **kwargs):
+        if self.base_url:
+            urljoin(self.base_url, url)
+
         kwargs.setdefault('timeout', getattr(self, 'timeout', None))
         if hasattr(self, 'allow_redirects'):
             kwargs['allow_redirects'] = self.allow_redirects
@@ -98,7 +106,7 @@ class ConfigurableSession(Session):
             self.request_at = datetime.utcnow()
 
             try:
-                resp = super().request(*args, **kwargs)
+                resp = super().request(method, url, *args, **kwargs)
                 if self.enforce_content_length and resp.raw.length_remaining not in (0, None):
                     # NOTE: This param may be set in urllib3.response.HTTPResponse,
                     # but there is no possibility to pass it to requests.adapters.HTTPAdapter.
