@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>SuperProxy</title>
-  <link href='//unpkg.com/element-ui@1.4.6/lib/theme-default/index.css' rel="stylesheet">
+  <link href='//unpkg.com/element-ui@1.4.12/lib/theme-default/index.css' rel="stylesheet">
   <link href='//unpkg.com/world-flags-sprite@0.0.2/stylesheets/flags16.css' rel="stylesheet">
   <style>
     body {
@@ -42,6 +42,9 @@
       font-size: 20px;
       text-shadow: 2px 2px #324157;
       background-color: #ce3939;
+    }
+    header .el-menu-item {
+      padding: 0 10px;
     }
     header .status {
       margin-left: 20px;
@@ -136,6 +139,7 @@
       <el-menu theme="dark" mode="horizontal" :router="true" :default-active="$route.path">
         <el-menu-item index="/">Proxies</el-menu-item>
         <el-menu-item index="/requests">Requests</el-menu-item>
+        <el-menu-item index="/countries">Countries</el-menu-item>
       </el-menu>
       <el-tooltip>
         <div slot="content" class="status-tooltip">
@@ -367,6 +371,31 @@
     </div>
   </template>
 
+  <template id="countries-component">
+    <div>
+      <div class="table-nav">
+        <el-input class="search" placeholder="example: UA US" icon="search"
+          v-model="search"
+          @input="searchUpdate"
+          >
+        </el-input>
+      </div>
+      <el-table stripe border :data="filteredCountries"
+        @row-click="row => $router.push('/?search=' + row.country)">
+        <el-table-column label="Country" prop="country" width="75px">
+          <template scope="{row}">
+            <span :class="row.country ? 'flag ' + row.country.toLowerCase() : ''"></span>
+            {{row.country}}
+          </template>
+        </el-table-column>
+        <el-table-column label="Active" prop="active" sortable></el-table-column>
+        <el-table-column label="Rest" prop="rest" sortable></el-table-column>
+        <el-table-column label="Blacklist" prop="blacklist" sortable></el-table-column>
+        <el-table-column label="Average speed" prop="speed" sortable></el-table-column>
+      </el-table>
+    </div>
+  </template>
+
   <script src="//unpkg.com/moment@2.18.1/min/moment.min.js"></script>
   <script src="//unpkg.com/js-cookie@2.2.0/src/js.cookie.js"></script>
   <script src="//unpkg.com/vue@2.4.4/dist/vue.min.js"></script>
@@ -530,6 +559,51 @@
       },
     }
 
+    const CountriesComponent = {
+      template: '#countries-component',
+
+      data () {
+        return {
+          search: '',
+          countries: [],
+          filteredCountries: [],
+        }
+      },
+
+      created () {
+        const qs = this.$route.query
+        if (qs.search) this.search = decodeURIComponent(qs.search)
+        this.countriesUpdate()
+      },
+
+      methods: {
+        countriesUpdate () {
+          this.$root.fetch('/countries', {method: 'GET'}).then(data => {
+            this.countries = Object.keys(data).map(k => {
+              const stats = data[k]
+              stats.country = k
+              return stats
+            })
+            this.searchUpdate()
+          })
+        },
+
+        searchUpdate () {
+          const qs = {
+            search: encodeURIComponent(this.search),
+          }
+          this.$router.push({query: qs})
+          if (!this.search) {
+            this.filteredCountries = this.countries
+            return
+          }
+          this.filteredCountries = this.countries.filter(c => {
+            return this.search.toUpperCase().includes(c.country)
+          })
+        },
+      },
+    }
+
     Vue.filter('formatTime', v => v ? `${v.format()} (${v.fromNow()})` : '')
     Vue.filter('formatInt', v => v ? v.toLocaleString() : v)
     new Vue({
@@ -540,6 +614,7 @@
         routes: [
           {path: '/', component: ProxiesComponent},
           {path: '/requests', component: RequestsComponent},
+          {path: '/countries', component: CountriesComponent},
           {path: '*', redirect: '/'},
         ],
       }),

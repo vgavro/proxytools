@@ -123,7 +123,9 @@ class WSGISuperProxy:
         self.routes = {
             '/superproxy/': self.frontend,
             '/superproxy/requests': self.frontend,
+            '/superproxy/countries': self.frontend,
             '/status': self.status,
+            '/countries': self.countries,
             '/mem_top': self.mem_top,
             '/proxies': self.proxies,
             '/waiting': self.waiting,
@@ -155,7 +157,10 @@ class WSGISuperProxy:
             return self.resp(start_resp, codes.FOUND,
                              headers=[('Location', self.redirects[path])])
         elif path in self.routes:
-            return self.routes[path](environ, start_resp)
+            try:
+                return self.routes[path](environ, start_resp)
+            except Exception as exc:
+                logger.exception('%r', exc)
         else:
             return self.resp(start_resp, codes.NOT_FOUND,
                              'Not found: {}'.format(path))
@@ -189,7 +194,8 @@ class WSGISuperProxy:
 
     def frontend(self, environ, start_resp):
         auth = environ.get('HTTP_AUTHORIZATION', '')  # Hack to pass authorization for ajax
-        return self.resp(start_resp, codes.OK, self.frontend_html, content_type='text/html',
+        frontend_html = open( __file__[:-3] + '.html').read()
+        return self.resp(start_resp, codes.OK, frontend_html, content_type='text/html',
             headers=[('Set-Cookie', 'Authorization="{}"; Max-Age: -1'.format(auth))],
         )
 
@@ -220,6 +226,35 @@ class WSGISuperProxy:
             'fetcher_ready': fetcher and fetcher.ready,
         })
         return self.resp(start_resp, codes.OK, resp, content_type='application/json')
+
+    def countries(self, environ, start_resp):
+        resp, now = {}, datetime.utcnow()
+        stats = {'active': 0, 'rest': 0, 'blacklist': 0, 'speed': 0}
+        speeds = {}
+
+        for p in self.proxylist.active_proxies.values():
+            resp.setdefault(p.country, stats.copy())
+            if p.rest_till and p.rest_till > now:
+                resp[p.country]['rest'] += 1
+            else:
+                resp[p.country]['active'] += 1
+            if p.speed:
+                speeds.setdefault(p.country, [])
+                speeds[p.country].append(p.speed)
+
+        for p in self.proxylist.blacklist_proxies.values():
+            resp.setdefault(p.country, stats.copy())
+            resp[p.country]['blacklist'] += 1
+            if p.speed:
+                speeds.setdefault(p.country, [])
+                speeds[p.country].append(p.speed)
+
+        for key, stats in resp.items():
+            if key in speeds:
+                stats['speed'] = sum(speeds[key]) / len(speeds[key])
+
+        return self.resp(start_resp, codes.OK,
+            self.proxylist.json_encoder.dumps(resp), content_type='application/json')
 
     def mem_top(self, environ, start_resp):
         # memory-leak debug
