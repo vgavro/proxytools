@@ -116,8 +116,13 @@ class WSGISuperProxy:
         assert __file__.endswith('.py')
         self.frontend_html = open( __file__[:-3] + '.html').read()
 
-        self.admin_route = {
+        self.redirects = {
+            '/': '/superproxy/',
+            '/superproxy': '/superproxy/',
+        }
+        self.routes = {
             '/superproxy/': self.frontend,
+            '/superproxy/requests': self.frontend,
             '/status': self.status,
             '/mem_top': self.mem_top,
             '/proxies': self.proxies,
@@ -131,25 +136,29 @@ class WSGISuperProxy:
             return self.resp(start_resp, codes.METHOD_NOT_ALLOWED,
                              'Method Not Allowed: {}'.format(environ['REQUEST_METHOD']))
 
-        if not environ['PATH_INFO'].startswith('/'):
-            self.ensure_remote_addr(environ, start_resp, self.proxy_allow_addrs)
-            self.ensure_authorization(environ, start_resp, self.proxy_credentials,
-                                      'X-SUPERPROXY-AUTHORIZATION')
-            return self.proxy(environ, start_resp)
+        path = environ['PATH_INFO']
+
+        if not path.startswith('/'):
+            # Proxy request
+            error = (self.ensure_remote_addr(environ, start_resp, self.proxy_allow_addrs) or
+                     self.ensure_authorization(environ, start_resp, self.proxy_credentials,
+                                               'X-SUPERPROXY-AUTHORIZATION'))
+            return error or self.proxy(environ, start_resp)
 
         # Routing locally otherwise
-        self.ensure_remote_addr(environ, start_resp, self.admin_allow_addrs)
-        self.ensure_authorization(environ, start_resp, self.admin_credentials, 'AUTHORIZATION')
-
-        if environ['PATH_INFO'] in ('/', '/superproxy'):
-            return self.resp(start_resp, codes.FOUND, headers=[('Location', '/superproxy/')])
-
-        handler = self.admin_route.get(environ['PATH_INFO'])
-        if handler:
-            return handler(environ, start_resp)
-
-        return self.resp(start_resp, codes.NOT_FOUND,
-                         'Not found: {}'.format(environ['PATH_INFO']))
+        error = (self.ensure_remote_addr(environ, start_resp, self.admin_allow_addrs) or
+                 self.ensure_authorization(environ, start_resp, self.admin_credentials,
+                                           'AUTHORIZATION'))
+        if error:
+            return error
+        elif path in self.redirects:
+            return self.resp(start_resp, codes.FOUND,
+                             headers=[('Location', self.redirects[path])])
+        elif path in self.routes:
+            return self.routes[path](environ, start_resp)
+        else:
+            return self.resp(start_resp, codes.NOT_FOUND,
+                             'Not found: {}'.format(path))
 
     def ensure_remote_addr(self, environ, start_resp, addrs):
         if addrs and environ['REMOTE_ADDR'] not in addrs:

@@ -6,6 +6,21 @@ TODO: Documentation, readme (README.md) and tests
 Proxyfetcher recommended dependencies:
 `apt-get install gocr imagemagick`
 
+# [Errno 24] Too many open files fix
+# NOTE - rules below not applied to processes started by systemd.
+# add LimitNOFILE=16384 to [Service] section or override in systemd defaults.
+/etc/security/limits.conf
+"""
+* soft nofile 16384
+* hard nofile 16384
+# (NOTE: replace "*" with root for root user)
+"""
+/etc/pam.d/common-session
+/etc/pam.d/common-session-noninteractive
+"""
+session required pam_limits.so
+
+
 Links:
 # some poorly implemented proxy checkers/fetchers
 https://github.com/DanMcInerney/elite-proxy-finder
