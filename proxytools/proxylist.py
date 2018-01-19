@@ -62,6 +62,7 @@ class ProxyList:
             checker = ProxyChecker(**checker)
         if checker:
             checker.proxy = self.proxy
+            checker.history = self.history
         self.checker = checker
         self.recheck_timeout = recheck_timeout
 
@@ -324,7 +325,7 @@ class ProxyList:
                     self.proxy_ready.wait(None if wait is True else wait - delta)
                 except Timeout:
                     continue
-                except:
+                except BaseException:
                     del self.waiting[ident]
                     raise
         if ident in self.waiting:

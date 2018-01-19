@@ -9,4 +9,6 @@ htmlcov/
 
 /env/
 /var/
+/log/
+/run/
 /etc/

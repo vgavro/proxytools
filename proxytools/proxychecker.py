@@ -2,8 +2,8 @@ import logging
 import time
 from datetime import datetime
 
-from .models import Proxy, HTTP_TYPES, AbstractProxyProcessor
-from .utils import get_response_speed
+from .models import HTTP_TYPES, PROXY_RESULT_TYPE, Proxy, AbstractProxyProcessor
+from .utils import get_response_speed, repr_response
 
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ CHECK_URLS = {
 class ProxyChecker(AbstractProxyProcessor):
     def __init__(self, proxy=None, pool=None, pool_size=None, blacklist=None,
                  session=None, timeout=10, max_retries=0, retry_timeout=0,
-                 http_check=True, https_check=True, https_force_check=False):
+                 http_check=True, https_check=True, https_force_check=False, history=0):
         super().__init__(proxy, pool, pool_size, blacklist)
 
         self.timeout = timeout
@@ -31,6 +31,8 @@ class ProxyChecker(AbstractProxyProcessor):
         # Checks even if only http is supported
         # Needed for some fetchers that not reporting that proxy supports https
         self.https_force_check = https_force_check
+
+        self.history = history
 
         # To avoid parallel processing of same proxy from different fetchers
         self._processing = set()
@@ -86,8 +88,10 @@ class ProxyChecker(AbstractProxyProcessor):
             start_at = time.time()
             resp = session.get(CHECK_URLS[protocol], proxies=proxies)
             resp.raise_for_status()
+
+            # TODO: anonymity check for http and fail proxy instead of assert
             assert 'origin' in resp.json()
-            # TODO: anonymity check for http
+
         except Exception as exc:
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 logger.debug('Check %s interrupted: %s: %s', protocol, proxy.addr, exc)
@@ -95,12 +99,18 @@ class ProxyChecker(AbstractProxyProcessor):
             logger.debug('Check %s fail: %s: %s', protocol, proxy.addr, exc)
             proxy.fail_at = datetime.utcnow()
             proxy.fail += 1
+            if self.history:
+                proxy.set_history(proxy.fail_at, PROXY_RESULT_TYPE.FAIL,
+                                  repr(exc), 'checker', self.history)
             return False
         else:
             logger.debug('Check %s success: %s', protocol, proxy.addr)
             proxy.success_at = datetime.utcnow()
             proxy.fail = 0
             proxy.speed = get_response_speed(resp, start_at)
+            if self.history:
+                proxy.set_history(proxy.success_at, PROXY_RESULT_TYPE.SUCCESS,
+                                  repr_response(resp), 'checker', self.history)
             return True
         finally:
             session.close()
