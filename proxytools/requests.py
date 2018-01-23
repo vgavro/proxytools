@@ -272,6 +272,8 @@ class ProxyListHTTPAdapter(ProxyListMixin, SharedProxyManagerHTTPAdapter):
     and other urls you want to serve directly.
     """
     def __init__(self, proxylist, **kwargs):
+        kwargs.setdefault('pool_connections', proxylist.max_simultaneous)
+        kwargs.setdefault('pool_maxsize', proxylist.max_simultaneous)
         super().__init__(proxylist, proxy_manager=proxylist.proxy_pool_manager, **kwargs)
 
     def send(self, *args, **kwargs):
@@ -288,7 +290,12 @@ class ProxyListSession(ProxyListMixin, ConfigurableSession):
     timeout = TIMEOUT_DEFAULT
 
     def __init__(self, proxylist, **kwargs):
-        adapter = SharedProxyManagerHTTPAdapter(proxylist.proxy_pool_manager)
+        # https://github.com/requests/requests/blob/v2.18.4/requests/adapters.py#L110
+        adapter_kwargs = {
+            'pool_connections': proxylist.max_simultaneous,
+            'pool_maxsize': proxylist.max_simultaneous,
+        }
+        adapter = SharedProxyManagerHTTPAdapter(proxylist.proxy_pool_manager, **adapter_kwargs)
         kwargs['mount'] = {'http://': adapter, 'https://': adapter}
         super().__init__(proxylist, **kwargs)
 

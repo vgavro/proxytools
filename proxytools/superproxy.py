@@ -339,9 +339,11 @@ class WSGISuperProxy:
         proxy_actions = {
             'blacklist': lambda p: self.proxylist.blacklist(p),
             'unblacklist': lambda p: self.proxylist.unblacklist(p),
-            'reset_rest_till': lambda p: p.__setattr__('rest_till', None),
             # avoid "can't assign to lambda" with __setattr__ here
+            'reset_rest_till': lambda p: p.__setattr__('rest_till', None),
             'recheck': lambda p: self.proxylist.checker(p),
+            # clear connections pool in proxy manager (for debug purposes)
+            'clear_proxy_pool_manager': lambda p: self.proxylist.clear_proxy_pool_manager(p),
         }
 
         if data['action'] == 'fetch':

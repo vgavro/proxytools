@@ -1,3 +1,6 @@
+import gevent.monkey
+gevent.monkey.patch_all()  # noqa
+
 import sys
 from collections import OrderedDict
 import logging
@@ -8,7 +11,7 @@ from click import command, option, echo, BadOptionUsage
 import coloredlogs
 import yaml
 
-from .utils import dict_merge, JSONEncoder, CompositeContains, gevent_monkey_patch
+from .utils import dict_merge, JSONEncoder, CompositeContains
 
 
 DEFAULT_LOGGING_CONFIG = {
@@ -72,7 +75,6 @@ def _cli_wrapper(func, config, options, verbose, **kwargs):
         conf['coloredlogs']['level'] = 'debug'
     configure_logging(conf)
 
-    gevent_monkey_patch()
     return func(config, **kwargs)
 
 

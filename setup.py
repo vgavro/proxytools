@@ -2,7 +2,8 @@ from setuptools import setup, find_packages
 
 requires = [
     # core
-    'requests[socks]>=2.13',
+    'requests[socks]>=2.18.4',
+    'pysocks>=1.6.8',
     'gevent',
     'netaddr',  # to allow/block ips to proxy
 

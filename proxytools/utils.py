@@ -138,15 +138,15 @@ class classproperty(property):
         return desc.fget(cls)
 
 
-def gevent_monkey_patch():
-    from gevent import monkey
-    monkey.patch_all()
-
-    # https://github.com/gevent/gevent/issues/937
-    # for error AttributeError: 'super' object has no attribute 'getpeername'
-    # NOTE: already fixed in pysocks master
-    from socks import socksocket
-    socksocket.get_proxy_peername = lambda self: self.getpeername()
+# def gevent_monkey_patch():
+#     from gevent import monkey
+#     monkey.patch_all()
+#
+#     # https://github.com/gevent/gevent/issues/937
+#     # for error AttributeError: 'super' object has no attribute 'getpeername'
+#     # NOTE: already fixed in pysocks master
+#     from socks import socksocket
+#     socksocket.get_proxy_peername = lambda self: self.getpeername()
 
 
 def to_isoformat(dt):

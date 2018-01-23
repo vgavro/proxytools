@@ -193,8 +193,8 @@ class ProxyList:
         proxy.fail += 1
         proxy.in_use -= 1
         assert proxy.in_use >= 0
-        reason = (exc and repr(exc)) or (resp is not None and
-                                         repr_response(resp, full=debug) or None)
+        reason = ((exc is not None and repr(exc)) or
+                  (resp is not None and repr_response(resp, full=debug)) or None)
         if self.history:
             proxy.set_history(proxy.fail_at, PROXY_RESULT_TYPE.FAIL, reason,
                               request_ident, self.history)
@@ -225,6 +225,20 @@ class ProxyList:
         if not load:
             logger.debug('Blacklist: %s %s', proxy.addr, self._stats_str)
             self.maybe_update()
+
+    def clear_proxy_pool_manager(self, proxy=None):
+        if proxy:
+            if proxy.url in self.proxy_pool_manager:
+                self.proxy_pool_manager[proxy.url].clear()
+                del self.proxy_pool_manager[proxy.url]
+        else:
+            for url in tuple(self.proxy_pool_manager.keys()):
+                if url in self.proxy_pool_manager:
+                    self.proxy_pool_manager[url].clear()
+                    self.proxy_pool_manager.pop(url, None)
+            if len(self.proxy_pool_manager):
+                logger.warn('proxy pool manager clear: not empty after clear: %s',
+                            tuple(self.proxy_pool_manager.keys()))
 
     def unblacklist(self, proxy):
         proxy.blacklist = False
