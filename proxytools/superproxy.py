@@ -10,7 +10,6 @@ from pytimeparse.timeparse import timeparse
 import netaddr
 
 from .models import PROXY_RESULT_TYPE
-from .exceptions import ProxyListError
 from .utils import ResponseMatch
 
 
@@ -343,7 +342,7 @@ class WSGISuperProxy:
             'reset_rest_till': lambda p: p.__setattr__('rest_till', None),
             'recheck': lambda p: self.proxylist.checker(p),
             # clear connections pool in proxy manager (for debug purposes)
-            'clear_proxy_pool_manager': lambda p: self.proxylist.clear_proxy_pool_manager(p),
+            'clear_pool_manager': lambda p: self.proxylist.clear_pool_manager(p),
         }
 
         if data['action'] == 'fetch':
@@ -434,10 +433,11 @@ class WSGISuperProxy:
         try:
             resp = self.session.request(method, url, data=data, headers=headers, **kwargs)
         except BaseException as exc:
-            if isinstance(exc, (ProxyListError, KeyboardInterrupt)):
-                logger.error('%r', exc)
-            else:
-                logger.exception('%r', exc)
+            logger.error('%r', exc)
+            # if isinstance(exc, (ProxyListError, KeyboardInterrupt)):
+            #     logger.error('%r', exc)
+            # else:
+            #     logger.exception('%r', exc)
             return self.resp(start_resp, codes.INTERNAL_SERVER_ERROR, repr(exc),
                              headers=[('X-Superproxy-Error', exc.__class__.__name__)])
 

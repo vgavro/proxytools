@@ -17,14 +17,13 @@ CHECK_URLS = {
 
 class ProxyChecker(AbstractProxyProcessor):
     def __init__(self, proxy=None, pool=None, pool_size=None, blacklist=None,
-                 session=None, timeout=10, max_retries=0, retry_timeout=0,
+                 timeout=10, retry_count=0, retry_wait=0,
                  http_check=True, https_check=True, https_force_check=False, history=0):
         super().__init__(proxy, pool, pool_size, blacklist)
 
         self.timeout = timeout
-        # TODO: not implemented
-        self.max_retries = max_retries
-        self.retry_timeout = retry_timeout
+        self.retry_count = retry_count
+        self.retry_wait = retry_wait
 
         self.http_check = http_check
         self.https_check = https_check
@@ -47,9 +46,16 @@ class ProxyChecker(AbstractProxyProcessor):
 
     def create_session(self):
         # Lazy import requests because of gevent.monkey_patch
-        from .requests import ConfigurableSession, ForgetfulCookieJar
-        return ConfigurableSession(cookies=ForgetfulCookieJar(), allow_redirects=False,
-                                   timeout=self.timeout)
+        from .requests import ConfigurableSession
+        return ConfigurableSession(
+            forgetful_cookies=True,
+            allow_redirects=False,
+            timeout=self.timeout,
+            # TODO: merge retry_count and HTTPAdapter.max_retries?
+            retry_count=self.retry_count,
+            retry_wait=self.retry_wait,
+            adapter={'pool_connections': 1, 'pool_maxsize': 1}
+        )
 
     def worker(self, proxy):
         if proxy.addr in self.blacklist:
@@ -57,7 +63,6 @@ class ProxyChecker(AbstractProxyProcessor):
             logger.debug('Check skipped: %s', proxy.addr)
             self._processing.remove(proxy.addr)
             return
-        # Creating session each time not to hit [Errno 24] Too many open files
         session = self.create_session()
         https_support = proxy.types.intersection([Proxy.TYPE.HTTPS, Proxy.TYPE.SOCKS4,
                                                   Proxy.TYPE.SOCKS5])

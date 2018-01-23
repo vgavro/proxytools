@@ -41,19 +41,25 @@ class ConfigurableSession(Session):
     Helper class that allows to pass some parameters to __init__
     instead of setting them later and extends with common functionality.
     """
-    base_url = None
-
-    def __init__(self, base_url=None, request_wait=0, retry_response=None,
+    def __init__(self, request_wait=0, retry_response=None,
                  retry_exception=None, retry_count=0, retry_wait=0,
                  forgetful_cookies=False, enforce_content_length=False,
-                 random_user_agent=False, **kwargs):
+                 random_user_agent=False, mount={}, adapter=None, **kwargs):
         super().__init__()
-        self.base_url = base_url or self.base_url
 
+        if isinstance(mount, (tuple, list)):
+            mount = {prefix: None for prefix in mount}
         # to specify ordering this may be OrderedDict
-        mount = kwargs.pop('mount', {})
-        for prefix, adapter in mount.items():
-            self.mount(prefix, adapter)
+        for prefix, adapter_ in mount.items():
+            self.mount(prefix, adapter_)
+
+        if adapter:
+            if isinstance(adapter, dict):
+                adapter = HTTPAdapter(**adapter)
+            for prefix in self.adapters:
+                self.adapters[prefix] = adapter
+        else:
+            assert all(self.adapters.values())
 
         for k, v in kwargs.items():
             if k in ('headers', 'auth', 'proxies', 'hooks', 'params', 'stream',
@@ -79,10 +85,7 @@ class ConfigurableSession(Session):
         if random_user_agent:
             self.headers['User-Agent'] = get_random_user_agent(random_user_agent)
 
-    def request(self, method, url, *args, **kwargs):
-        if self.base_url:
-            urljoin(self.base_url, url)
-
+    def request(self, *args, **kwargs):
         kwargs.setdefault('timeout', getattr(self, 'timeout', None))
         if hasattr(self, 'allow_redirects'):
             kwargs['allow_redirects'] = self.allow_redirects
@@ -106,7 +109,7 @@ class ConfigurableSession(Session):
             self.request_at = datetime.utcnow()
 
             try:
-                resp = super().request(method, url, *args, **kwargs)
+                resp = super().request(*args, **kwargs)
                 if self.enforce_content_length and resp.raw.length_remaining not in (0, None):
                     # NOTE: This param may be set in urllib3.response.HTTPResponse,
                     # but there is no possibility to pass it to requests.adapters.HTTPAdapter.
@@ -126,6 +129,18 @@ class ConfigurableSession(Session):
                 continue
             break
         return resp
+
+
+class BaseUrlSession(Session):
+    base_url = None
+
+    def __init__(self, base_url=None, *args, **kwargs):
+        self.base_url = base_url or self.base_url
+
+    def request(self, method, url, *args, **kwargs):
+        if self.base_url:
+            url = urljoin(self.base_url, url)
+        return super().request(method, url, *args, **kwargs)
 
 
 class RegexpMountSession(Session):

@@ -28,7 +28,7 @@ class ProxyList:
     def __init__(self, fetcher=None, checker=None, min_size=50, max_fail=3, max_simultaneous=2,
                  success_timeout=0, fail_timeout=0, history=0, update_on=None,
                  update_timeout=30 * 60, recheck_timeout=3 * 60 * 60,
-                 blacklist_timeout=24 * 60 * 60,
+                 blacklist_timeout=24 * 60 * 60, pool_manager_timeout=60,
                  filename=None, atexit_save=False, json_encoder={}):
         if min_size <= 0:
             raise ValueError('min_size must be positive')
@@ -52,6 +52,7 @@ class ProxyList:
         self.proxy_pool_manager = {}
 
         self.blacklist_timeout = blacklist_timeout
+        self.pool_manager_timeout = pool_manager_timeout
         self.update_timeout = update_timeout
         if isinstance(update_on, str):
             update_on = import_string(update_on)
@@ -145,12 +146,16 @@ class ProxyList:
                 logger.info('Start fetch %s', self._stats_str)
                 spawn(self.fetcher)  # do not block current greenlet
 
-            if self.checker and self.recheck_timeout:
-                recheck_proxies = []
-                for p in tuple(self.active_proxies.values()):
-                    if (not p.used_at or
-                       (now - p.used_at).total_seconds() > self.recheck_timeout):
-                        recheck_proxies.append(p)
+            recheck_proxies = []
+            for p in tuple(self.active_proxies.values()):
+                if p.in_use:
+                    continue
+                delta = p.used_at and (now - p.used_at).total_seconds()
+                if self.recheck_timeout and (delta is None or delta > self.recheck_timeout):
+                    recheck_proxies.append(p)
+                if self.pool_manager_timeout and (delta or 0) > self.pool_manager_timeout:
+                    self.clear_pool_manager(p)
+            if recheck_proxies:
                 spawn(self.checker, *recheck_proxies)  # do not block current greenlet
 
             if self.blacklist_timeout:
@@ -219,26 +224,15 @@ class ProxyList:
         if proxy.addr in self.active_proxies:
             del self.active_proxies[proxy.addr]
         self.blacklist_proxies[proxy.addr] = proxy
-        if proxy.url in self.proxy_pool_manager:
-            self.proxy_pool_manager[proxy.url].clear()
-            del self.proxy_pool_manager[proxy.url]
+        self.clear_pool_manager(proxy)
         if not load:
             logger.debug('Blacklist: %s %s', proxy.addr, self._stats_str)
             self.maybe_update()
 
-    def clear_proxy_pool_manager(self, proxy=None):
-        if proxy:
-            if proxy.url in self.proxy_pool_manager:
-                self.proxy_pool_manager[proxy.url].clear()
-                del self.proxy_pool_manager[proxy.url]
-        else:
-            for url in tuple(self.proxy_pool_manager.keys()):
-                if url in self.proxy_pool_manager:
-                    self.proxy_pool_manager[url].clear()
-                    self.proxy_pool_manager.pop(url, None)
-            if len(self.proxy_pool_manager):
-                logger.warn('proxy pool manager clear: not empty after clear: %s',
-                            tuple(self.proxy_pool_manager.keys()))
+    def clear_pool_manager(self, proxy):
+        if proxy.url in self.proxy_pool_manager:
+            self.proxy_pool_manager[proxy.url].clear()
+            del self.proxy_pool_manager[proxy.url]
 
     def unblacklist(self, proxy):
         proxy.blacklist = False
