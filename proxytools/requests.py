@@ -342,8 +342,7 @@ class SuperProxySession(ConfigurableSession):
         self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs)
                              if k.startswith('proxy_')}
         self._persist_addr = None
-        adapter = PlainHTTPSProxyManagerHTTPAdapter()
-        kwargs['mount'] = {'http://': adapter, 'https://': adapter}
+        kwargs['adapter'] = PlainHTTPSProxyManagerHTTPAdapter(**kwargs.pop('adapter', {}))
         kwargs['proxies'] = {'http': superproxy_url, 'https': superproxy_url}
         super().__init__(**kwargs)
 
