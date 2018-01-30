@@ -434,12 +434,13 @@ class WSGISuperProxy:
             resp = self.session.request(method, url, data=data, headers=headers, **kwargs)
         except BaseException as exc:
             logger.error('%r', exc)
-            # if isinstance(exc, (ProxyListError, KeyboardInterrupt)):
-            #     logger.error('%r', exc)
-            # else:
-            #     logger.exception('%r', exc)
-            return self.resp(start_resp, codes.INTERNAL_SERVER_ERROR, repr(exc),
-                             headers=[('X-Superproxy-Error', exc.__class__.__name__)])
+            exc_path = exc.__class__.__module__ + '.' + exc.__class__.__qualname__
+            exc_args = tuple(str(arg) for arg in getattr(exc, 'args', ['_NO_ARGS']))
+            return self.resp(
+                start_resp, codes.INTERNAL_SERVER_ERROR,
+                self.proxylist.json_encoder.dumps((exc_path,) + exc_args),
+                headers=[('X-Superproxy-Error', exc.__class__.__name__)]
+            )
 
         headers = []
         # http://docs.python-requests.org/en/master/user/quickstart/#response-headers
@@ -451,6 +452,8 @@ class WSGISuperProxy:
 
         headers += [
             ('X-Superproxy-Addr', resp._proxy and resp._proxy.addr or ''),
+            ('X-Superproxy-Rest-Count', str(resp._rest_count)),
+            ('X-Superproxy-Fail-Count', str(resp._fail_count)),
         ]
 
         return self.resp(start_resp, '{0.status_code} {0.reason}'.format(resp),

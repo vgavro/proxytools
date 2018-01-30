@@ -11,7 +11,7 @@ from requests.sessions import Session
 from requests.utils import select_proxy, urldefragauth
 from gevent import sleep
 
-from .exceptions import ProxyListError, ProxyMaxRetriesExceeded
+from .exceptions import InsufficientProxies, ProxyMaxRetriesExceeded
 from .superproxy import SUPERPROXY_REQUEST_HEADERS
 from .utils import repr_response, get_random_user_agent
 
@@ -136,6 +136,7 @@ class BaseUrlSession(Session):
 
     def __init__(self, base_url=None, *args, **kwargs):
         self.base_url = base_url or self.base_url
+        super().__init__(*args, **kwargs)
 
     def request(self, method, url, *args, **kwargs):
         if self.base_url:
@@ -220,13 +221,13 @@ class ProxyListMixin:
         if allow_no_proxy:
             proxy_kwargs.setdefault('wait', False)
 
-        exclude = []
+        exclude, fail_count, rest_count = [], 0, 0
         for _ in range(max_retries):
 
             try:
                 proxy = self.proxylist.get(strategy, exclude=exclude, persist=persist_addr,
                                            request_ident=request_ident, **proxy_kwargs)
-            except ProxyListError as exc:
+            except InsufficientProxies as exc:
                 if allow_no_proxy:
                     proxy = None
                     kwargs['proxies'] = None
@@ -242,6 +243,8 @@ class ProxyListMixin:
                 # NOTE: timeout extends BaseException and should not match
                 if not proxy:
                     raise
+
+                fail_count += 1
                 self.proxylist.fail(proxy, timeout=fail_timeout, exc=exc,
                                     request_ident=request_ident, debug=debug)
                 if persist is True:
@@ -251,9 +254,12 @@ class ProxyListMixin:
             else:
                 if not proxy:
                     resp._proxy = None
+                    resp._rest_count = rest_count
+                    resp._fail_count = fail_count
                     # NOTE: no content validation if no proxy was used
                     return resp
                 if rest_response and rest_response(resp):
+                    rest_count += 1
                     self.proxylist.rest(proxy, timeout=rest_timeout, resp=resp,
                                         request_ident=request_ident, debug=debug)
                     if persist is True:
@@ -266,10 +272,12 @@ class ProxyListMixin:
                                            request_ident=request_ident)
                     if persist is True:
                         self._persist_addr = proxy.addr
-                    # NOTE: maybe remove it, test purpose only (also used in superproxy)
                     resp._proxy = proxy
+                    resp._rest_count = rest_count
+                    resp._fail_count = fail_count
                     return resp
                 else:
+                    fail_count += 1
                     self.proxylist.fail(proxy, timeout=fail_timeout, resp=resp,
                                         request_ident=request_ident)
                     if persist is True:
@@ -277,7 +285,8 @@ class ProxyListMixin:
                     exclude.append(proxy.addr)
         reason_repr = exc_ and repr(exc_) or repr_response(resp)
         raise ProxyMaxRetriesExceeded('Max retries exceeded: {} {}'
-                                      .format(max_retries, reason_repr))
+                                      .format(max_retries, reason_repr),
+                                      fail_count, rest_count)
 
 
 class ProxyListHTTPAdapter(ProxyListMixin, SharedProxyManagerHTTPAdapter):
@@ -337,12 +346,15 @@ class SuperProxySession(ConfigurableSession):
     you may not validate success responses for https (certificate validation enabled by default).
     """
     timeout = TIMEOUT_DEFAULT * PROXY_MAX_RETRIES_DEFAULT
+    reraise_map = {exc_cls.__name__: exc_cls for exc_cls
+                   in [InsufficientProxies, ProxyMaxRetriesExceeded]}
 
-    def __init__(self, superproxy_url, **kwargs):
+    def __init__(self, superproxy_url, proxy_persist=False, adapter={}, **kwargs):
         self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs)
                              if k.startswith('proxy_')}
-        self._persist_addr = None
-        kwargs['adapter'] = PlainHTTPSProxyManagerHTTPAdapter(**kwargs.pop('adapter', {}))
+        self._persist_addr = proxy_persist
+        kwargs['adapter'] = (PlainHTTPSProxyManagerHTTPAdapter(**adapter)
+                             if isinstance(adapter, dict) else adapter)
         kwargs['proxies'] = {'http': superproxy_url, 'https': superproxy_url}
         super().__init__(**kwargs)
 
@@ -354,9 +366,8 @@ class SuperProxySession(ConfigurableSession):
 
         for k, v in self.proxy_kwargs.items():
             kwargs.setdefault(k, v)
-        persist = kwargs.pop('proxy_persist', False)
-        if persist is True and self._persist_addr:
-            kwargs['proxy_persist'] = self._persist_addr
+        if self._persist_addr and self._persist_addr is not True:
+            kwargs.setdefault('proxy_persist', self._persist_addr)
 
         proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs)
                         if k.startswith('proxy_')}
@@ -369,12 +380,12 @@ class SuperProxySession(ConfigurableSession):
         resp = super().request(method, url, headers=headers, **kwargs)
         error_cls_name = resp.headers.get('X-Superproxy-Error')
         if error_cls_name:
-            if error_cls_name in ProxyListError.cls_map:
-                error_arg = resp.text[len(error_cls_name) + 2:len(resp.text) - 3]
-                raise ProxyListError.cls_map[error_cls_name](error_arg)
-            raise Exception(error_cls_name)
+            if error_cls_name in self.reraise_map:
+                # First arg is the name of exception class
+                raise self.reraise_map[error_cls_name](*resp.json()[1:])
+            raise Exception(*resp.json())
 
-        if persist:
+        if self._persist_addr:
             self._persist_addr = resp.headers.get('X-Superproxy-Addr') or None
 
         return resp
