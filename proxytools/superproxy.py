@@ -106,6 +106,7 @@ class WSGISuperProxy:
                                         enforce_content_length=True,
                                         **session_kwargs)
         self.proxylist = proxylist
+        self.started_at = datetime.utcnow()
 
         self.proxy_allow_addrs = proxy_allow_addrs and netaddr.IPGlob(proxy_allow_addrs)
         self.admin_allow_addrs = admin_allow_addrs and netaddr.IPGlob(admin_allow_addrs)
@@ -211,6 +212,7 @@ class WSGISuperProxy:
         checker = self.proxylist.checker
         fetcher = self.proxylist.fetcher
         resp = self.proxylist.json_encoder.dumps({
+            'started_at': self.started_at,
             'rest': rest,
             'active': active,
             'blacklist': len(self.proxylist.blacklist_proxies),

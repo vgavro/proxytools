@@ -153,6 +153,9 @@
             Checker: {{status.checker}}{{status.checker && ` (${status.checker_processing})`}},
           </p>
           <p>
+            Started at: {{status.started_at | formatTime}}
+          </p>
+          <p>
             Fetch started at: {{status.fetcher_started_at | formatTime}},
             Fetch ready: {{status.fetcher_ready}}
           </p>
@@ -638,6 +641,7 @@
             if (data.fetcher_started_at) {
               data.fetcher_started_at = moment.utc(data.fetcher_started_at).local()
             }
+            data.started_at = moment.utc(data.started_at).local()
             this.status = data
           })
         },
