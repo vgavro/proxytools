@@ -151,7 +151,7 @@ class ProxyList:
                         'Proxy pool manager: %s', len(self.active_proxies.keys()),
                         len(self.proxy_pool_manager.keys()))
             proxy_cleared_count = 0
-            for p in tuple(self.active_proxies.values()):
+            for p in self.active_proxies.values():
                 if p.in_use:
                     continue
                 delta = p.used_at and (now - p.used_at).total_seconds()
@@ -167,9 +167,12 @@ class ProxyList:
                 spawn(self.checker, *recheck_proxies)  # do not block current greenlet
 
             if self.blacklist_timeout:
-                for p in tuple(self.blacklist_proxies.values()):
+                to_delete = []
+                for p in self.blacklist_proxies.values():
                     if (now - p.used_at).total_seconds() > self.blacklist_timeout:
-                        del self.blacklist_proxies[p.addr]
+                        to_delete.append(p.addr)
+                for addr in to_delete:
+                    del self.blacklist_proxies[addr]
 
     def proxy(self, proxy, load=False):
         if proxy.addr in self.blacklist_proxies:
