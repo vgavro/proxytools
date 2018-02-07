@@ -98,9 +98,6 @@ class ProxyChecker(AbstractProxyProcessor):
             assert 'origin' in resp.json()
 
         except Exception as exc:
-            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                logger.debug('Check %s interrupted: %s: %s', protocol, proxy.addr, exc)
-                return
             logger.debug('Check %s fail: %s: %s', protocol, proxy.addr, exc)
             proxy.fail_at = datetime.utcnow()
             proxy.fail += 1
