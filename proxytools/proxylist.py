@@ -50,6 +50,8 @@ class ProxyList:
 
         # Dictionary to use shared connection pools between sessions
         self.proxy_pool_manager = {}
+        # NOTE: debug
+        self.proxy_cleared_count = 0
 
         self.blacklist_timeout = blacklist_timeout
         self.pool_manager_timeout = pool_manager_timeout
@@ -150,7 +152,7 @@ class ProxyList:
             logger.debug('Clearing pool manager start. Actiove proxies: %s, '
                         'Proxy pool manager: %s', len(self.active_proxies.keys()),
                         len(self.proxy_pool_manager.keys()))
-            proxy_cleared_count = 0
+            self.proxy_cleared_count = 0
             for p in self.active_proxies.values():
                 if p.in_use:
                     continue
@@ -158,11 +160,10 @@ class ProxyList:
                 if self.recheck_timeout and (delta is None or delta > self.recheck_timeout):
                     recheck_proxies.append(p)
                 if self.pool_manager_timeout and (delta or 0) > self.pool_manager_timeout:
-                    proxy_cleared_count += 1
                     self.clear_pool_manager(p)
             logger.debug('Clearing pool manager complete. Actiove proxies: %s, '
                         'Proxy pool manager: %s, cleard: %s', len(self.active_proxies.keys()),
-                        len(self.proxy_pool_manager.keys()), proxy_cleared_count)
+                        len(self.proxy_pool_manager.keys()), self.proxy_cleared_count)
             if recheck_proxies:
                 spawn(self.checker, *recheck_proxies)  # do not block current greenlet
 
@@ -244,7 +245,8 @@ class ProxyList:
         if proxy.url in self.proxy_pool_manager:
             self.proxy_pool_manager[proxy.url].clear()
             del self.proxy_pool_manager[proxy.url]
-            logger.debug('Clearing pool manager: clear: %s', proxy_url)
+            self.proxy_cleared_count += 1
+            # logger.debug('Clearing pool manager: clear: %s', proxy.url)
 
     def unblacklist(self, proxy):
         proxy.blacklist = False
