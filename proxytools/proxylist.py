@@ -155,6 +155,9 @@ class ProxyList:
                     recheck_proxies.append(p)
                 if self.pool_manager_timeout and (delta or 0) > self.pool_manager_timeout:
                     self.clear_pool_manager(p)
+            logger.info('Clearing pool manager complete. Actiove proxies: %s, '
+                        'Proxy pool manager: %s', len(self.active_proxies.keys()),
+                        len(self.proxy_pool_manager.keys()))
             if recheck_proxies:
                 spawn(self.checker, *recheck_proxies)  # do not block current greenlet
 
