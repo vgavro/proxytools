@@ -97,7 +97,7 @@ class ConfigurableSession(Session):
         retry_wait = retry_default_wait = kwargs.get('retry_wait', self.retry_wait)
 
         for retry in range(retry_count + 1):
-            wait = retry and (retry_wait if isinstance(retry_wait, (int, float))
+            wait = retry and (retry_wait if type(retry_wait) in (int, float)
                               else retry_default_wait) or request_wait
             while wait and self.request_at:
                 # checking continuous for simultaneous use
