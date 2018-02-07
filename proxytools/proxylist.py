@@ -147,6 +147,10 @@ class ProxyList:
                 spawn(self.fetcher)  # do not block current greenlet
 
             recheck_proxies = []
+            logger.debug('Clearing pool manager start. Actiove proxies: %s, '
+                        'Proxy pool manager: %s', len(self.active_proxies.keys()),
+                        len(self.proxy_pool_manager.keys()))
+            proxy_cleared_count = 0
             for p in tuple(self.active_proxies.values()):
                 if p.in_use:
                     continue
@@ -154,10 +158,11 @@ class ProxyList:
                 if self.recheck_timeout and (delta is None or delta > self.recheck_timeout):
                     recheck_proxies.append(p)
                 if self.pool_manager_timeout and (delta or 0) > self.pool_manager_timeout:
+                    proxy_cleared_count += 1
                     self.clear_pool_manager(p)
-            logger.info('Clearing pool manager complete. Actiove proxies: %s, '
-                        'Proxy pool manager: %s', len(self.active_proxies.keys()),
-                        len(self.proxy_pool_manager.keys()))
+            logger.debug('Clearing pool manager complete. Actiove proxies: %s, '
+                        'Proxy pool manager: %s, cleard: %s', len(self.active_proxies.keys()),
+                        len(self.proxy_pool_manager.keys()), proxy_cleared_count)
             if recheck_proxies:
                 spawn(self.checker, *recheck_proxies)  # do not block current greenlet
 
@@ -236,6 +241,7 @@ class ProxyList:
         if proxy.url in self.proxy_pool_manager:
             self.proxy_pool_manager[proxy.url].clear()
             del self.proxy_pool_manager[proxy.url]
+            logger.debug('Clearing pool manager: clear: %s', proxy_url)
 
     def unblacklist(self, proxy):
         proxy.blacklist = False
