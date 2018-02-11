@@ -25,8 +25,7 @@ requires = [
 
     # tests
     'requests-mock',
-    'pytest',
-    'pytest-catchlog',
+    'pytest>=1.3',
     'pytest-cov',
     'pytest-flake8',
 
