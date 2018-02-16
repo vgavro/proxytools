@@ -50,8 +50,6 @@ class ProxyList:
 
         # Dictionary to use shared connection pools between sessions
         self.proxy_pool_manager = {}
-        # NOTE: debug
-        self.proxy_cleared_count = 0
 
         self.blacklist_timeout = blacklist_timeout
         self.pool_manager_timeout = pool_manager_timeout
@@ -104,9 +102,10 @@ class ProxyList:
 
     @property
     def _stats_str(self):
-        return ('(active:{} blacklist:{} wait:{} fetch:{})'
+        return ('(active:{} blacklist:{} pool:{} wait:{} fetch:{})'
                 .format(len(self.active_proxies), len(self.blacklist_proxies),
-                        len(self.waiting), not self.fetcher and 'no' or
+                        len(self.proxy_pool_manager), len(self.waiting),
+                        not self.fetcher and 'no' or
                         (self.fetcher.ready and 'ready' or 'working')))
 
     def _proxy_ready_notify_at(self, proxy_ready_at):
@@ -148,11 +147,9 @@ class ProxyList:
                 logger.info('Start fetch %s', self._stats_str)
                 spawn(self.fetcher)  # do not block current greenlet
 
-            recheck_proxies = []
-            logger.debug('Clearing pool manager start. Actiove proxies: %s, '
-                        'Proxy pool manager: %s', len(self.active_proxies.keys()),
-                        len(self.proxy_pool_manager.keys()))
-            self.proxy_cleared_count = 0
+            recheck_proxies, clear_pool_count = [], 0
+            logger.debug('Recheck/clear start: %s', self._stats_str)
+
             for p in self.active_proxies.values():
                 if p.in_use:
                     continue
@@ -160,12 +157,8 @@ class ProxyList:
                 if self.recheck_timeout and (delta is None or delta > self.recheck_timeout):
                     recheck_proxies.append(p)
                 if self.pool_manager_timeout and (delta or 0) > self.pool_manager_timeout:
+                    clear_pool_count += 1
                     self.clear_pool_manager(p)
-            logger.debug('Clearing pool manager complete. Actiove proxies: %s, '
-                        'Proxy pool manager: %s, cleard: %s', len(self.active_proxies.keys()),
-                        len(self.proxy_pool_manager.keys()), self.proxy_cleared_count)
-            if recheck_proxies:
-                spawn(self.checker, *recheck_proxies)  # do not block current greenlet
 
             if self.blacklist_timeout:
                 to_delete = []
@@ -174,6 +167,11 @@ class ProxyList:
                         to_delete.append(p.addr)
                 for addr in to_delete:
                     del self.blacklist_proxies[addr]
+
+            logger.debug('Recheck/clear complete: recheck:%s clear_pool:%s clear_blacklist:%s %s',
+                         len(recheck_proxies), clear_pool_count, len(to_delete), self._stats_str)
+            if recheck_proxies:
+                spawn(self.checker, *recheck_proxies)  # do not block current greenlet
 
     def proxy(self, proxy, load=False):
         if proxy.addr in self.blacklist_proxies:
@@ -245,8 +243,6 @@ class ProxyList:
         if proxy.url in self.proxy_pool_manager:
             self.proxy_pool_manager[proxy.url].clear()
             del self.proxy_pool_manager[proxy.url]
-            self.proxy_cleared_count += 1
-            # logger.debug('Clearing pool manager: clear: %s', proxy.url)
 
     def unblacklist(self, proxy):
         proxy.blacklist = False
