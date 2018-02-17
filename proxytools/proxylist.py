@@ -148,7 +148,7 @@ class ProxyList:
                 spawn(self.fetcher)  # do not block current greenlet
 
             recheck_proxies, clear_pool_count = [], 0
-            logger.debug('Recheck/clear start: %s', self._stats_str)
+            logger.debug('Recheck/clear start %s', self._stats_str)
 
             for p in self.active_proxies.values():
                 if p.in_use:
@@ -157,8 +157,7 @@ class ProxyList:
                 if self.recheck_timeout and (delta is None or delta > self.recheck_timeout):
                     recheck_proxies.append(p)
                 if self.pool_manager_timeout and (delta or 0) > self.pool_manager_timeout:
-                    clear_pool_count += 1
-                    self.clear_pool_manager(p)
+                    clear_pool_count += int(self.clear_pool_manager(p))
 
             if self.blacklist_timeout:
                 to_delete = []
@@ -243,6 +242,8 @@ class ProxyList:
         if proxy.url in self.proxy_pool_manager:
             self.proxy_pool_manager[proxy.url].clear()
             del self.proxy_pool_manager[proxy.url]
+            return True
+        return False
 
     def unblacklist(self, proxy):
         proxy.blacklist = False
@@ -399,3 +400,4 @@ class ProxyList:
         logger.info('Saving proxies status %s %s', filename, self._stats_str)
         with open(filename, 'w') as fh:
             fh.write(content)
+        logger.debug('Saved proxies status %s %s', filename, self._stats_str)

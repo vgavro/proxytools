@@ -20,6 +20,8 @@ DEFAULT_LOGGING_CONFIG = {
     }
 }
 
+logger = logging.getLogger(__name__)
+
 
 def configure_logging(config):
     config = config.copy()
@@ -193,34 +195,50 @@ def fetcher(config, show_list, fetchers, check, pool_size,
         help='Listen host:port (defaults "0.0.0.0:8088").'),
     option('-p', '--pool', 'pool_size', type=int, default=None,
         help='Pool size (defaults "500").'),
+    option('-s', '--stop', 'stop_timeout', type=int, default=None,
+        help='Stop timeout (defaults "5").'),
     option('-d', '--dozer', is_flag=True,
         help='Enable dozer memory debugger.'),
 )
-def superproxy(config, listen, pool_size, dozer):
-    import signal
+def superproxy(config, listen, pool_size, stop_timeout, dozer):
     import sys
-    # for graceful shutdown with saving proxies on atexit
-    signal.signal(signal.SIGTERM, lambda *args: sys.exit(0))
-    signal.signal(signal.SIGQUIT, lambda *args: sys.exit(0))
+    import signal
 
+    import gevent
     from gevent.pywsgi import WSGIServer
     from gevent.pool import Pool
     from .superproxy import WSGISuperProxy
     from .proxylist import ProxyList
 
+    conf = config.get('superproxy', {})
+
     fetcher = config.get('proxyfetcher')
     checker = config.get('proxychecker')
-
-    conf = config.get('superproxy', {})
     proxylist = ProxyList(fetcher=fetcher, checker=checker, **conf.pop('proxylist', {}))
 
     listen = listen or conf.pop('listen', '0.0.0.0:8088')
     pool_size = pool_size or conf.pop('pool_size', 500)
+    stop_timeout = stop_timeout or conf.pop('stop_timeout', 5)
     dozer = conf.pop('dozer', False)
     iface, port = listen.split(':')
+
     app = WSGISuperProxy(proxylist, **conf)
     if dozer:
         from dozer import Dozer
         app = Dozer(app)
+
     server = WSGIServer((iface, int(port)), app, spawn=Pool(pool_size))
+    server.stop_timeout = stop_timeout
+
+    def stop(*args):
+        if server.closed:
+            try:
+                logger.error('Multiple exit signals received - aborting.')
+            finally:
+                sys.exit('Multiple exit signals received - aborting.')
+        logger.info('Stopping server %s', args)
+        server.stop()
+        logger.debug('Stopped server %s', args)
+    [gevent.signal(sig, stop) for sig in (signal.SIGTERM, signal.SIGINT)]
+
     server.serve_forever()
