@@ -20,8 +20,6 @@ DEFAULT_LOGGING_CONFIG = {
     }
 }
 
-logger = logging.getLogger(__name__)
-
 
 def configure_logging(config):
     config = config.copy()
@@ -230,15 +228,18 @@ def superproxy(config, listen, pool_size, stop_timeout, dozer):
     server = WSGIServer((iface, int(port)), app, spawn=Pool(pool_size))
     server.stop_timeout = stop_timeout
 
+    logger = logging.getLogger('proxytools.superproxy')
+
     def stop(*args):
         if server.closed:
             try:
-                logger.error('Multiple exit signals received - aborting.')
+                logger.error('Server stopping - multiple exit signals received - aborting.')
             finally:
                 sys.exit('Multiple exit signals received - aborting.')
-        logger.info('Stopping server %s', args)
+        logger.info('Server stopping %s', args)
         server.stop()
-        logger.debug('Stopped server %s', args)
-    [gevent.signal(sig, stop) for sig in (signal.SIGTERM, signal.SIGINT)]
+    [gevent.signal(sig, stop) for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)]
 
+    logger.info('Server started')
     server.serve_forever()
+    logger.debug('Server stopped')
