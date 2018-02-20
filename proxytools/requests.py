@@ -1,4 +1,5 @@
 import re
+import logging
 from datetime import datetime
 from collections import OrderedDict
 from urllib.parse import urljoin
@@ -15,6 +16,8 @@ from .exceptions import InsufficientProxies, ProxyMaxRetriesExceeded
 from .superproxy import SUPERPROXY_REQUEST_HEADERS
 from .utils import repr_response, get_random_user_agent
 
+
+logger = logging.getLogger(__name__)
 
 PROXY_MAX_RETRIES_DEFAULT = 3
 TIMEOUT_DEFAULT = 10
@@ -47,6 +50,8 @@ class ConfigurableSession(Session):
                  random_user_agent=False, mount={}, adapter=None, **kwargs):
         super().__init__()
 
+        # TODO: rename mount to adapters, remove adapter arg, rename
+        # classes with Mount in name to Adapters in name
         if isinstance(mount, (tuple, list)):
             mount = {prefix: None for prefix in mount}
         # to specify ordering this may be OrderedDict
@@ -67,7 +72,7 @@ class ConfigurableSession(Session):
                      'timeout', 'allow_redirects'):
                 setattr(self, k, v)
             else:
-                raise TypeError('Unknown keyword argument: %s', k)
+                raise TypeError('Unknown keyword argument: {}'.format(k))
 
         self.request_wait = request_wait
         self.request_at = None
@@ -134,9 +139,10 @@ class ConfigurableSession(Session):
 class BaseUrlSession(Session):
     base_url = None
 
-    def __init__(self, base_url=None, *args, **kwargs):
-        self.base_url = base_url or self.base_url
-        super().__init__(*args, **kwargs)
+    def __init__(self, base_url=None, **kwargs):
+        if base_url:
+            self.base_url = base_url
+        super().__init__(**kwargs)
 
     def request(self, method, url, *args, **kwargs):
         if self.base_url:
@@ -170,6 +176,55 @@ class RegexpMountSession(Session):
             if re.match(url):
                 return adapter
         return super().get_adapter(url)
+
+
+class SharedMountSession(Session):
+    """
+    Allows HTTPAdapters (containing connection pools) to be shared across all class instances.
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if hasattr(self.__class__, '_shared_adapters'):
+            self.adapters = self.__class__.shared_adapters
+        else:
+            self.__class__._shared_adapters = self.adapters
+
+        if hasattr(self, 'regexp_adapters'):
+            # compatibility with RegexpMountSession
+            if hasattr(self.__class__, '_shared_regexp_adapters'):
+                self.regexp_adapters = self._shared_regexp_adapters
+            else:
+                self.__class__._shared_regexp_adapters = self.regexp_adapters
+
+
+class SuppressExceptionSession(Session):
+    """
+    Allows to pass callback to suppress exception (returns exception instead of raise).
+    If suppress_exception=True, all exceptions will be suppressed.
+    """
+    def __init__(self, suppress_exception=None, raise_for_status=False, **kwargs):
+        # TODO: remove raise_for_status from here in requests-client package,
+        # and use more sophisticated status match.
+        self.suppress_exception = suppress_exception
+        self.raise_for_status = raise_for_status
+        super().__init__(**kwargs)
+
+    def request(self, method, url, *args, **kwargs):
+        suppress_exception = kwargs.pop('suppress_exception', self.suppress_exception)
+
+        try:
+            resp = super().request(method, url, *args, **kwargs)
+            if self.raise_for_status:
+                resp.raise_for_status()
+            return resp
+        except Exception as exc:
+            if suppress_exception is True:
+                logger.warn('Suppressed exception: %s %s %r', method, url, exc)
+                return exc
+            elif suppress_exception and suppress_exception(exc):
+                logger.warn('Suppressed exception: %s %s %r', method, url, exc)
+                return exc
+            raise
 
 
 class ProxyListMixin:
