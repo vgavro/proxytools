@@ -185,7 +185,7 @@ class SharedMountSession(Session):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if hasattr(self.__class__, '_shared_adapters'):
-            self.adapters = self.__class__.shared_adapters
+            self.adapters = self.__class__._shared_adapters
         else:
             self.__class__._shared_adapters = self.adapters
 
