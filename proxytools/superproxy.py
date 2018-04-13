@@ -35,6 +35,7 @@ SUPERPROXY_REQUEST_HEADERS = {
     'proxy_wait': (lambda x: {'f': False, 't': True}.get(x, int(x)),
                    lambda x: str({True: 't', False: 'f'}.get(x, x))),
     'proxy_persist': (str, str),
+    'proxy_exclude': (lambda x: x.split(','), lambda x: ','.join(x)),
     'proxy_countries': (lambda x: x.split(','), lambda x: ','.join(x)),
     'proxy_countries_exclude': (lambda x: x.split(','), lambda x: ','.join(x)),
     'proxy_min_speed': (float, str),

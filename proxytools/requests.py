@@ -268,6 +268,7 @@ class ProxyListMixin:
         debug = kwargs.pop('proxy_debug', False)
         if rest_response and not rest_timeout:
             raise ValueError('rest_response must be used with rest_timeout > 0')
+        # NOTE: exclude precedes persist, so persist is ignored if it's in exclude
         persist = kwargs.pop('proxy_persist', False)
         persist_addr = self._persist_addr if persist is True else persist
         proxy_kwargs = {k[6:]: kwargs.pop(k) for k in tuple(kwargs.keys())
@@ -276,7 +277,7 @@ class ProxyListMixin:
         if allow_no_proxy:
             proxy_kwargs.setdefault('wait', False)
 
-        exclude, fail_count, rest_count = [], 0, 0
+        exclude, fail_count, rest_count = kwargs.pop('proxy_exclude', []), 0, 0
         for _ in range(max_retries):
 
             try:
