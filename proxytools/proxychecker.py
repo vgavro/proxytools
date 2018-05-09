@@ -9,9 +9,15 @@ from .utils import get_response_speed, repr_response
 logger = logging.getLogger(__name__)
 
 
-CHECK_URLS = {
+HTTPBIN_CHECK_URLS = {
     'http': 'http://httpbin.org/get?show_env=1',
     'https': 'https://httpbin.org/get?show_env=1',
+}
+
+
+MOCKBIN_CHECK_URLS = {
+    'http': 'http://mockbin.com/request',
+    'https': 'https://mockbin.com/request',
 }
 
 
@@ -91,11 +97,12 @@ class ProxyChecker(AbstractProxyProcessor):
         proxies = {'http': proxy.url, 'https': proxy.url}
         try:
             start_at = time.time()
-            resp = session.get(CHECK_URLS[protocol], proxies=proxies)
+            resp = session.get(MOCKBIN_CHECK_URLS[protocol], proxies=proxies)
             resp.raise_for_status()
 
             # TODO: anonymity check for http and fail proxy instead of assert
-            assert 'origin' in resp.json()
+            # assert 'origin' in resp.json()  # for httpbin
+            assert 'clientIPAddress' in resp.json()  # for mockbin
 
         except Exception as exc:
             logger.debug('Check %s fail: %s: %s', protocol, proxy.addr, exc)
