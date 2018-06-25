@@ -102,14 +102,20 @@ def _iter_proxies_by_status(proxylist, status):
 class WSGISuperProxy:
     def __init__(self, proxylist, proxy_allow_addrs=None, admin_allow_addrs=None,
                  proxy_credentials=None, admin_credentials=None, request_wrapper=None,
-                 **session_kwargs):
+                 proxy_request_wrapper=None, **session_kwargs):
+        if isinstance(proxy_request_wrapper, str):
+            proxy_request_wrapper = import_string(proxy_request_wrapper)
+
         from .requests import ProxyListSession
         self.session = ProxyListSession(proxylist, forgetful_cookies=True,
                                         enforce_content_length=True,
+                                        proxy_request_wrapper=proxy_request_wrapper,
                                         **session_kwargs)
+
         if isinstance(request_wrapper, str):
             request_wrapper = import_string(request_wrapper)
-        self.session.request = request_wrapper(self.session.request)
+        if request_wrapper:
+            self.session.request = request_wrapper(self.session.request)
 
         self.proxylist = proxylist
         self.started_at = datetime.utcnow()

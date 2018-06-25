@@ -228,9 +228,10 @@ class SuppressExceptionSession(Session):
 
 
 class ProxyListMixin:
-    def __init__(self, proxylist, allow_no_proxy=False, **kwargs):
+    def __init__(self, proxylist, allow_no_proxy=False, proxy_request_wrapper=None, **kwargs):
         self.proxylist = proxylist
         self.allow_no_proxy = allow_no_proxy
+        self.proxy_request_wrapper = proxy_request_wrapper
         self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs.keys())
                              if k.startswith('proxy_')}
         self._persist_addr = None
@@ -253,6 +254,10 @@ class ProxyListMixin:
         if kwargs.get('proxies'):
             raise ValueError('proxies argument is not empty, '
                              'but should be populated from proxylist')
+
+        # TODO: move it to bind on _proxylist_call refactoring
+        if self.proxy_request_wrapper:
+            func = self.proxy_request_wrapper(func)
 
         for k, v in self.proxy_kwargs.items():
             kwargs.setdefault(k, v)
