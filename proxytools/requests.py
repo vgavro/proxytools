@@ -234,6 +234,7 @@ class ProxyListMixin:
         self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs.keys())
                              if k.startswith('proxy_')}
         self._persist_addr = None
+
         super().__init__(**kwargs)
 
     @staticmethod

@@ -10,7 +10,7 @@ from pytimeparse.timeparse import timeparse
 import netaddr
 
 from .models import PROXY_RESULT_TYPE
-from .utils import ResponseMatch
+from .utils import ResponseMatch, import_string
 
 
 logger = logging.getLogger(__name__)
@@ -101,11 +101,16 @@ def _iter_proxies_by_status(proxylist, status):
 
 class WSGISuperProxy:
     def __init__(self, proxylist, proxy_allow_addrs=None, admin_allow_addrs=None,
-                 proxy_credentials=None, admin_credentials=None, **session_kwargs):
+                 proxy_credentials=None, admin_credentials=None, request_wrapper=None,
+                 **session_kwargs):
         from .requests import ProxyListSession
         self.session = ProxyListSession(proxylist, forgetful_cookies=True,
                                         enforce_content_length=True,
                                         **session_kwargs)
+        if isinstance(request_wrapper, str):
+            request_wrapper = import_string(request_wrapper)
+        self.session.request = request_wrapper(self.session.request)
+
         self.proxylist = proxylist
         self.started_at = datetime.utcnow()
 
