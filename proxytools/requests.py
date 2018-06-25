@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 from collections import OrderedDict
 from urllib.parse import urljoin
+from functools import partial
 
 from urllib3.poolmanager import ProxyManager
 from urllib3.exceptions import IncompleteRead
@@ -228,13 +229,18 @@ class SuppressExceptionSession(Session):
 
 
 class ProxyListMixin:
-    def __init__(self, proxylist, allow_no_proxy=False, proxy_request_wrapper=None, **kwargs):
+    def __init__(self, proxylist, request_method_name, allow_no_proxy=False,
+                 proxy_request_wrapper=None, **kwargs):
         self.proxylist = proxylist
         self.allow_no_proxy = allow_no_proxy
-        self.proxy_request_wrapper = proxy_request_wrapper
         self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs.keys())
                              if k.startswith('proxy_')}
         self._persist_addr = None
+
+        request = getattr(self, request_method_name)
+        if proxy_request_wrapper:
+            request = proxy_request_wrapper(request)
+        setattr(self, request_method_name, partial(self._proxylist_request, request))
 
         super().__init__(**kwargs)
 
@@ -250,14 +256,10 @@ class ProxyListMixin:
         # assert callable(match)
         return match
 
-    def _proxylist_call(self, func, *args, **kwargs):
+    def _proxylist_request(self, request, *args, **kwargs):
         if kwargs.get('proxies'):
             raise ValueError('proxies argument is not empty, '
                              'but should be populated from proxylist')
-
-        # TODO: move it to bind on _proxylist_call refactoring
-        if self.proxy_request_wrapper:
-            func = self.proxy_request_wrapper(func)
 
         for k, v in self.proxy_kwargs.items():
             kwargs.setdefault(k, v)
@@ -303,7 +305,7 @@ class ProxyListMixin:
 
             exc_ = None  # workaround for "smart" python3 variable clearing
             try:
-                resp = func(*args, **kwargs)
+                resp = request(*args, **kwargs)
             except Exception as exc:
                 # NOTE: timeout extends BaseException and should not match
                 if not proxy:
@@ -363,10 +365,8 @@ class ProxyListHTTPAdapter(ProxyListMixin, SharedProxyManagerHTTPAdapter):
     def __init__(self, proxylist, **kwargs):
         kwargs.setdefault('pool_connections', proxylist.max_simultaneous)
         kwargs.setdefault('pool_maxsize', proxylist.max_simultaneous)
-        super().__init__(proxylist, proxy_manager=proxylist.proxy_pool_manager, **kwargs)
-
-    def send(self, *args, **kwargs):
-        return self._proxylist_call(super().send, *args, **kwargs)
+        super().__init__(proxylist, 'send',
+                         proxy_manager=proxylist.proxy_pool_manager, **kwargs)
 
 
 class ProxyListSession(ProxyListMixin, ConfigurableSession):
@@ -386,14 +386,14 @@ class ProxyListSession(ProxyListMixin, ConfigurableSession):
         }
         adapter = SharedProxyManagerHTTPAdapter(proxylist.proxy_pool_manager, **adapter_kwargs)
         kwargs['mount'] = {'http://': adapter, 'https://': adapter}
-        super().__init__(proxylist, **kwargs)
+        super().__init__(proxylist, 'request', **kwargs)
 
     def request(self, *args, **kwargs):
         # TODO: for now redirects are done without proxy,
         # because it uses self.send method directly, and we
         # can't easily pass proxy_kwargs there
         kwargs['allow_redirects'] = False
-        return self._proxylist_call(super().request, *args, **kwargs)
+        return super().request(*args, **kwargs)
 
 
 class SuperProxySession(ConfigurableSession):
