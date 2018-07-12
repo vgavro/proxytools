@@ -384,15 +384,15 @@ class ProxyList:
         return self.active_proxies.get(addr) or self.blacklist_proxies.get(addr)
 
     def load(self, filename):
-        with open(filename, 'r') as fh:
-            try:
+        try:
+            with open(filename, 'r') as fh:
                 data = json.load(fh)
-            except Exception as exc:
-                logger.exception('Loading proxies failed %s %r', filename, exc)
-            else:
-                for proxy in data:
-                    self.proxy(Proxy.from_json(proxy), load=True)
-                logger.info('Loaded proxies %s %s', filename, self._stats_str)
+        except Exception as exc:
+            logger.exception('Loading proxies failed %s %r', filename, exc)
+        else:
+            for proxy in data:
+                self.proxy(Proxy.from_json(proxy), load=True)
+            logger.info('Loaded proxies %s %s', filename, self._stats_str)
 
     def save(self, filename=None):
         filename = filename or self.atexit_save
