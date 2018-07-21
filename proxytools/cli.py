@@ -218,13 +218,19 @@ def superproxy(config, listen, pool_size, stop_timeout, dozer):
     pool_size = pool_size or conf.pop('pool_size', 500)
     stop_timeout = stop_timeout or conf.pop('stop_timeout', 5)
     dozer = conf.pop('dozer', False)
-    iface, port = listen.split(':')
+    http_debug = conf.pop('http_debug', False)
 
     app = WSGISuperProxy(proxylist, **conf)
+
     if dozer:
         from dozer import Dozer
         app = Dozer(app)
 
+    if http_debug:
+        import http.client
+        http.client.HTTPConnection.debuglevel = 10 if http_debug is True else http_debug
+
+    iface, port = listen.split(':')
     server = WSGIServer((iface, int(port)), app, spawn=Pool(pool_size))
     server.stop_timeout = stop_timeout
 

@@ -423,7 +423,7 @@ class SuperProxySession(ConfigurableSession):
         kwargs['proxies'] = {'http': superproxy_url, 'https': superproxy_url}
         super().__init__(**kwargs)
 
-    def request(self, method, url, headers={}, **kwargs):
+    def request(self, method, url, headers=None, **kwargs):
         # TODO: for now redirects are done without proxy,
         # because it uses self.send method directly, and we
         # can't easily pass proxy_kwargs there
@@ -436,6 +436,8 @@ class SuperProxySession(ConfigurableSession):
 
         proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs)
                         if k.startswith('proxy_')}
+
+        headers = headers or {}
         for key, value in proxy_kwargs.items():
             if key in ['proxy_timeout', 'proxy_allow_no_proxy']:
                 key = key[6:]

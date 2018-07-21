@@ -17,7 +17,7 @@ def test_proxylist_session():
     def worker(x):
         started = time.time()
         print('Fetch start', x)
-        resp = session.get('https://httpbin.org/get')
+        resp = session.get('http://httpbin.org/get')
         assert 'origin' in resp.json(), resp.json()
         print('Fetch succeed', x, time.time() - started, resp._proxy.addr, resp._proxy.speed)
         # except Exception as exc:

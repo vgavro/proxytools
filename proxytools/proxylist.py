@@ -73,6 +73,8 @@ class ProxyList:
             fetcher.proxy = self.proxy
             if self.checker:
                 fetcher.checker = self.checker
+            elif fetcher.checker:
+                fetcher.checker.proxy = self.proxy
             fetcher.blacklist = CompositeContains(self.active_proxies,
                                                   self.blacklist_proxies)
         self.fetcher = fetcher
