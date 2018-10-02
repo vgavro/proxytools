@@ -426,20 +426,6 @@
     ELEMENT.locale(ELEMENT.lang.en)
     moment.relativeTimeThreshold('ss', 0)
 
-    // lodash replacements
-    function pickBy (obj, fn) {
-      return Object.entries(obj).filter(fn)
-        .reduce((obj, [k, v]) => Object.assign(obj, {[k]: v}), {})
-    }
-
-    function pick (obj, ...keys) {
-      return pickBy(obj, ([k, v]) => keys.includes(k))
-    }
-
-    function omit (obj, ...keys) {
-      return pickBy(obj, ([k, v]) => !keys.includes(k))
-    }
-
     function _parseProxyHistoryRecord (h) {
       return {
         time: moment.utc(h[0]).local(),
