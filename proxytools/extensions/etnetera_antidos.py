@@ -17,7 +17,7 @@ EWAAD_REGEXP = re.compile('document.cookie="EWAAD=([\d\w]+);')
 ewaad_cache = {}
 
 
-class ProxyListSession(ProxyListSession):
+class EwaadSessionMixin:
     def __init__(self, *args, ewaad_urls=None, **kwargs):
         if ewaad_urls:
             self.ewaad_urls = tuple(ewaad_urls) if isinstance(ewaad_urls, list) else ewaad_urls
@@ -33,10 +33,10 @@ class ProxyListSession(ProxyListSession):
             # It will be in conflict with cookies parameter,
             # will not raise exception but request would be malformed
             del headers['Cookie']
-        proxy = kwargs.get('proxies', {}).get('https').split('://')[-1]
+        proxy = kwargs.get('proxies', self.proxies).get('https').split('://')[-1]
         ewaad = ewaad_cache.get(proxy)
         if ewaad:
-            logger.debug('EWAAD from cache %s %s', proxy, ewaad)
+            # logger.debug('EWAAD from cache %s %s', proxy, ewaad)
             kwargs['cookies'] = {'EWAAD': ewaad}
         resp = super().request(meth, url, headers=headers, **kwargs)
         match = EWAAD_REGEXP.search(resp.text)
@@ -46,7 +46,7 @@ class ProxyListSession(ProxyListSession):
             logger.warn('EWAAD cached failed %s %s', proxy, ewaad)
 
         ewaad = match.groups()[0]
-        logger.debug('EWAAD resolved %s %s', proxy, ewaad)
+        # logger.debug('EWAAD resolved %s %s', proxy, ewaad)
         ewaad_cache[proxy] = ewaad
         kwargs['cookies'] = {'EWAAD': ewaad}
         resp = super().request(meth, url, headers=headers, **kwargs)
@@ -54,6 +54,10 @@ class ProxyListSession(ProxyListSession):
         if match:
             raise RuntimeError('EWAAD not resolved')
         return resp
+
+
+class ProxyListSession(EwaadSessionMixin, ProxyListSession):
+    pass
 
 
 class WSGISuperProxy(WSGISuperProxy):
