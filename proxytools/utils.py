@@ -8,6 +8,10 @@ from datetime import datetime, date, time
 import time as time_
 from urllib.parse import quote, unquote
 from importlib import import_module
+from shutil import which
+
+
+from gevent.subprocess import run, PIPE
 
 
 def repr_response(resp, full=False):
@@ -273,3 +277,9 @@ def get_random_user_agent(user_agents=True):
     if user_agents is True:
         return random.choice(COMMON_USER_AGENTS)
     return random.choice(user_agents)
+
+
+def gocr_response(resp, pattern, convert=which('convert'), gocr=which('gocr')):
+    cmd = run('{} - pbm:- | {} -C "{}" -'.format(convert, gocr, pattern),
+              stdout=PIPE, input=resp.content, shell=True, check=True)
+    return cmd.stdout.strip().decode()

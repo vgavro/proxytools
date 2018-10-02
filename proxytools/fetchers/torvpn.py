@@ -1,11 +1,10 @@
 from shutil import which
 
-from gevent.subprocess import run, PIPE
 from lxml import html
 from pytimeparse.timeparse import timeparse
 
 from ..proxyfetcher import ConcreteProxyFetcher, Proxy
-from ..utils import country_name_to_alpha2
+from ..utils import country_name_to_alpha2, gocr_response
 
 
 class TorVpnProxyFetcher(ConcreteProxyFetcher):
@@ -56,8 +55,7 @@ class TorVpnProxyFetcher(ConcreteProxyFetcher):
         resp = self.session.get(self.ROOT_URL + ip_url)
         resp.raise_for_status()
         assert resp.headers['content-type'] == 'image/png'
-        cmd = run('{} - pbm:- | {} -C "0-9." -'.format(self.convert, self.gocr),
-                  stdout=PIPE, input=resp.content, shell=True, check=True)
+        ip = gocr_response(resp, '0-9.', convert=self.convert, gocr=self.gocr)
         # "_" is default for unrecognizable, this is always "7"
-        ip = cmd.stdout.strip().decode().replace('_', '7')
+        ip = ip.replace('_', '7')
         yield Proxy(ip + ':' + port, **kwargs)
