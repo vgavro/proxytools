@@ -8,6 +8,7 @@ htmlcov/
 *.sw[ponm]
 
 /env/
+/venv/
 /var/
 /log/
 /run/

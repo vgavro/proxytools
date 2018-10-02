@@ -11,7 +11,7 @@ from click import command, option, echo, BadOptionUsage
 import coloredlogs
 import yaml
 
-from .utils import dict_merge, JSONEncoder, CompositeContains
+from .utils import dict_merge, JSONEncoder, CompositeContains, import_string
 
 
 DEFAULT_LOGGING_CONFIG = {
@@ -199,20 +199,30 @@ def fetcher(config, show_list, fetchers, check, pool_size,
         help='Enable dozer memory debugger.'),
 )
 def superproxy(config, listen, pool_size, stop_timeout, dozer):
+    # TODO: clean this chaotic configuration, obviously we should not configure
+    # from strings/dicts inside classes, it will make things more obvious
+
     import sys
     import signal
 
     import gevent
     from gevent.pywsgi import WSGIServer
     from gevent.pool import Pool
-    from .superproxy import WSGISuperProxy
-    from .proxylist import ProxyList
 
     conf = config.get('superproxy', {})
+    superproxy_cls = import_string(conf.pop('cls', 'proxytools.superproxy.WSGISuperProxy'))
+
+    if conf.get('verify', None) is False:
+        # Assuming you know what you're doing
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     fetcher = config.get('proxyfetcher')
     checker = config.get('proxychecker')
-    proxylist = ProxyList(fetcher=fetcher, checker=checker, **conf.pop('proxylist', {}))
+
+    proxylist_cls = import_string(conf.get('proxylist', {})
+                                  .pop('cls', 'proxytools.proxylist.ProxyList'))
+    proxylist = proxylist_cls(fetcher=fetcher, checker=checker, **conf.pop('proxylist', {}))
 
     listen = listen or conf.pop('listen', '0.0.0.0:8088')
     pool_size = pool_size or conf.pop('pool_size', 500)
@@ -220,7 +230,7 @@ def superproxy(config, listen, pool_size, stop_timeout, dozer):
     dozer = conf.pop('dozer', False)
     http_debug = conf.pop('http_debug', False)
 
-    app = WSGISuperProxy(proxylist, **conf)
+    app = superproxy_cls(proxylist, **conf)
 
     if dozer:
         from dozer import Dozer

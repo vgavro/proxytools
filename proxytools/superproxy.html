@@ -159,8 +159,11 @@
             Fetch started at: {{status.fetcher_started_at | formatTime}},
             Fetch ready: {{status.fetcher_ready}}
           </p>
+          <p v-if="status.extra">
+            {{ status.extra }}
+          </p>
         </div>
-        <div class="status">
+        <div class="status" @click="statusUpdate">
           <span><i class="el-icon-check green"></i> {{status.active | formatInt}} </span>
           <span><i class="el-icon-date yellow"></i> {{status.rest | formatInt}} </span>
           <span><i class="el-icon-close red"></i> {{status.blacklist | formatInt}} </span>
@@ -173,13 +176,17 @@
           Actions<i class="el-icon-caret-bottom el-icon--right"></i>
         </el-button>
         <el-dropdown-menu slot="dropdown" class="dropdown-menu-small">
-          <el-dropdown-item :command="{action: 'fetch'}">Fetch proxies</el-dropdown-item>
-          <el-dropdown-item :command="{action: 'recheck'}">Recheck proxies</el-dropdown-item>
-          <el-dropdown-item :command="{action: 'clear_pool_manager'}">Clear pool managers</el-dropdown-item>
-          <!--<el-dropdown-item>Add proxies</el-dropdown-item>-->
-          <el-dropdown-item :command="{action: 'forget_blacklist'}">
-            Forget blacklist
+          <el-dropdown-item v-for="action in status.actions_proxy"
+            :command="{action: action}"
+            >
+            {{action}}
           </el-dropdown-item>
+          <el-dropdown-item v-for="action in status.actions"
+            :command="{action: action}"
+            >
+            {{action}}
+          </el-dropdown-item>
+          <!--<el-dropdown-item>Add proxies</el-dropdown-item>-->
         </el-dropdown-menu>
       </el-dropdown>
     </header>
@@ -230,18 +237,11 @@
                 Actions<i class="el-icon-caret-bottom el-icon--right"></i>
               </el-button>
               <el-dropdown-menu slot="dropdown" class="dropdown-menu-mini">
-                <el-dropdown-item
-                  :command="{action: 'recheck', addr: row.addr}"
-                  >Recheck</el-dropdown-item>
-                <el-dropdown-item v-if="!row.blacklist"
-                  :command="{action: 'blacklist', addr: row.addr}"
-                  >Blacklist</el-dropdown-item>
-                <el-dropdown-item v-if="row.blacklist"
-                  :command="{action: 'unblacklist', addr: row.addr}"
-                  >Unblacklist</el-dropdown-item>
-                <el-dropdown-item v-if="row.rest_till"
-                  :command="{action: 'reset_rest_till', addr: row.addr}"
-                  >Reset rest_till</el-dropdown-item>
+                <el-dropdown-item v-for="action in $root.status.actions_proxy"
+                  :command="{action: action, addr: row.addr}"
+                  >
+                  {{action}}
+                </el-dropdown-item>
               </el-dropdown-menu>
             </el-dropdown>
             <p>
@@ -425,6 +425,20 @@
   <script>
     ELEMENT.locale(ELEMENT.lang.en)
     moment.relativeTimeThreshold('ss', 0)
+
+    // lodash replacements
+    function pickBy (obj, fn) {
+      return Object.entries(obj).filter(fn)
+        .reduce((obj, [k, v]) => Object.assign(obj, {[k]: v}), {})
+    }
+
+    function pick (obj, ...keys) {
+      return pickBy(obj, ([k, v]) => keys.includes(k))
+    }
+
+    function omit (obj, ...keys) {
+      return pickBy(obj, ([k, v]) => !keys.includes(k))
+    }
 
     function _parseProxyHistoryRecord (h) {
       return {
@@ -625,7 +639,7 @@
 
       data () {
         return {
-          status: {},
+          status: {actions: [], actions_proxy: []},
         }
       },
 
@@ -683,6 +697,8 @@
               runAction(action, {used_at_before: data.value || '0s'})
             })
           }
+
+          else this.$confirm(`Run action ${action.action}?`).then(() => runAction(action))
         },
 
         fetch (url, params) {

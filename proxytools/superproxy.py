@@ -101,21 +101,14 @@ def _iter_proxies_by_status(proxylist, status):
 
 class WSGISuperProxy:
     def __init__(self, proxylist, proxy_allow_addrs=None, admin_allow_addrs=None,
-                 proxy_credentials=None, admin_credentials=None, request_wrapper=None,
-                 proxy_request_wrapper=None, **session_kwargs):
-        if isinstance(proxy_request_wrapper, str):
-            proxy_request_wrapper = import_string(proxy_request_wrapper)
+                 proxy_credentials=None, admin_credentials=None,
+                 session_cls='proxytools.requests.ProxyListSession',
+                 **session_kwargs):
 
-        from .requests import ProxyListSession
-        self.session = ProxyListSession(proxylist, forgetful_cookies=True,
-                                        enforce_content_length=True,
-                                        proxy_request_wrapper=proxy_request_wrapper,
-                                        **session_kwargs)
-
-        if isinstance(request_wrapper, str):
-            request_wrapper = import_string(request_wrapper)
-        if request_wrapper:
-            self.session.request = request_wrapper(self.session.request)
+        if isinstance(session_cls, str):
+            session_cls = import_string(session_cls)
+        self.session = session_cls(proxylist, forgetful_cookies=True,
+                                   enforce_content_length=True, **session_kwargs)
 
         self.proxylist = proxylist
         self.started_at = datetime.utcnow()
@@ -143,6 +136,15 @@ class WSGISuperProxy:
             '/waiting': self.waiting,
             '/history': self.history,
             '/action': self.action,
+        }
+
+        self.actions_proxy = {
+            attr[13:]: getattr(self, attr) for attr in dir(self)
+            if attr.startswith('action_proxy_')
+        }
+        self.actions = {
+            attr[7:]: getattr(self, attr) for attr in dir(self)
+            if attr.startswith('action_') and not attr.startswith('action_proxy_')
         }
 
     def __call__(self, environ, start_resp):
@@ -212,6 +214,10 @@ class WSGISuperProxy:
         )
 
     def status(self, environ, start_resp):
+        resp = self.proxylist.json_encoder.dumps(self._status())
+        return self.resp(start_resp, codes.OK, resp, content_type='application/json')
+
+    def _status(self):
         now = datetime.utcnow()
         active, rest, in_use = 0, 0, 0
         for p in self.proxylist.active_proxies.values():
@@ -223,7 +229,9 @@ class WSGISuperProxy:
 
         checker = self.proxylist.checker
         fetcher = self.proxylist.fetcher
-        resp = self.proxylist.json_encoder.dumps({
+        return {
+            'actions': tuple(self.actions),
+            'actions_proxy': tuple(self.actions_proxy),
             'started_at': self.started_at,
             'rest': rest,
             'active': active,
@@ -237,8 +245,7 @@ class WSGISuperProxy:
             'fetcher': bool(fetcher),
             'fetcher_started_at': fetcher and fetcher.started_at,
             'fetcher_ready': fetcher and fetcher.ready,
-        })
-        return self.resp(start_resp, codes.OK, resp, content_type='application/json')
+        }
 
     def countries(self, environ, start_resp):
         resp, now = {}, datetime.utcnow()
@@ -342,6 +349,37 @@ class WSGISuperProxy:
         })
         return self.resp(start_resp, codes.OK, resp, content_type='application/json')
 
+    def action_proxy_blacklist(self, p):
+        self.proxylist.blacklist(p)
+
+    def action_proxy_unblacklist(self, p):
+        self.proxylist.unblacklist(p)
+
+    def action_proxy_reset_rest_till(self, p):
+        setattr(p, 'rest_till', None)
+
+    def action_proxy_recheck(self, p):
+        self.proxylist.checker(p)
+
+    def action_proxy_clear_pool_manager(self, p):
+        # clear connections pool in proxy manager (for debug purposes)
+        self.proxylist.clear_pool_manager(p)
+
+    def action_fetch(self, data):
+        if self.proxylist.fetcher and self.proxylist.fetcher.ready:
+            self.proxylist.fetcher()
+        else:
+            raise RuntimeError('Fetcher not ready')
+
+    def action_forget_blacklist(self, data):
+        if 'used_at_before' not in data:
+            raise ValueError('Required params not found: {}'.format(data))
+        used_at_before = (datetime.utcnow() -
+                          timedelta(seconds=timeparse(data['used_at_before'])))
+        for p in tuple(self.proxylist.blacklist_proxies.values()):
+            if p.used_at and used_at_before > p.used_at:
+                del self.proxylist.blacklist_proxies[p.addr]
+
     def action(self, environ, start_resp):
         data = environ['wsgi.input'].read(int(environ['CONTENT_LENGTH']))
         data = json.loads(data.decode('utf-8'))
@@ -349,32 +387,13 @@ class WSGISuperProxy:
         def error(msg):
             return self.resp(start_resp, codes.UNPROCESSABLE, msg)
 
-        proxy_actions = {
-            'blacklist': lambda p: self.proxylist.blacklist(p),
-            'unblacklist': lambda p: self.proxylist.unblacklist(p),
-            # avoid "can't assign to lambda" with __setattr__ here
-            'reset_rest_till': lambda p: p.__setattr__('rest_till', None),
-            'recheck': lambda p: self.proxylist.checker(p),
-            # clear connections pool in proxy manager (for debug purposes)
-            'clear_pool_manager': lambda p: self.proxylist.clear_pool_manager(p),
-        }
+        if data['action'] in self.actions:
+            try:
+                self.actions[data['action']](data)
+            except (ValueError, RuntimeError) as exc:
+                return error(str(exc))
 
-        if data['action'] == 'fetch':
-            if self.proxylist.fetcher and self.proxylist.fetcher.ready:
-                self.proxylist.fetcher()
-            else:
-                return error('Fetcher not ready')
-
-        elif data['action'] == 'forget_blacklist':
-            if 'used_at_before' not in data:
-                return error('Required params not found: {}'.format(data))
-            used_at_before = (datetime.utcnow() -
-                              timedelta(seconds=timeparse(data['used_at_before'])))
-            for p in tuple(self.proxylist.blacklist_proxies.values()):
-                if p.used_at and used_at_before > p.used_at:
-                    del self.proxylist.blacklist_proxies[p.addr]
-
-        elif data['action'] in proxy_actions:
+        elif data['action'] in self.actions_proxy:
             if data['action'] == 'recheck':
                 if (not self.proxylist.checker):
                     return error('No checker configured')
@@ -383,7 +402,7 @@ class WSGISuperProxy:
                 proxy = self.proxylist.get_by_addr(data['addr'])
                 if not proxy:
                     return error('Proxy not found: {}'.format(data['addr']))
-                proxy_actions[data['action']](proxy)
+                self.actions_proxy[data['action']](proxy)
 
             elif 'status' in data or 'used_at_before' in data or 'used_at_after' in data:
                 status = ('status' in data and data['status'].split(',') or
@@ -398,13 +417,13 @@ class WSGISuperProxy:
                         continue
                     if used_at_after and p.used_at and used_at_after > p.used_at:
                         continue
-                    proxy_actions[data['action']](p)
+                    self.actions_proxy[data['action']](p)
 
             else:
                 return error('Required params not found: {}'.format(data))
 
         else:
-            return self.resp(start_resp, codes.UNPROCESSABLE, 'Unknown action')
+            return error('Unknown action')
 
         return self.resp(start_resp, codes.OK, '{"status": "ok"}',
                          content_type='application/json')

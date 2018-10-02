@@ -229,8 +229,7 @@ class SuppressExceptionSession(Session):
 
 
 class ProxyListMixin:
-    def __init__(self, proxylist, request_method_name, allow_no_proxy=False,
-                 proxy_request_wrapper=None, **kwargs):
+    def __init__(self, proxylist, request_method_name, allow_no_proxy=False, **kwargs):
         self.proxylist = proxylist
         self.allow_no_proxy = allow_no_proxy
         self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs.keys())
@@ -238,8 +237,6 @@ class ProxyListMixin:
         self._persist_addr = None
 
         request = getattr(self, request_method_name)
-        if proxy_request_wrapper:
-            request = proxy_request_wrapper(request)
         setattr(self, request_method_name, partial(self._proxylist_request, request))
 
         super().__init__(**kwargs)

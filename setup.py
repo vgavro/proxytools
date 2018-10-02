@@ -12,6 +12,7 @@ requires = [
     'pycountry-convert>=0.6',
     'pytimeparse',
     'lxml>=3.7.3',
+    'js2py',
     'cssselect>=1.0.1',  # lxml requirement for css selectors
 
     # cli
