@@ -1,5 +1,6 @@
 import re
 import logging
+import random
 from datetime import datetime
 from collections import OrderedDict
 from urllib.parse import urljoin
@@ -89,7 +90,11 @@ class ConfigurableSession(Session):
         self.enforce_content_length = enforce_content_length
 
         if random_user_agent:
-            self.headers['User-Agent'] = get_random_user_agent(random_user_agent)
+            if isinstance(random_user_agent, (list, tuple, set)):
+                random_user_agent = random.choice(random_user_agent)
+            else:
+                random_user_agent = get_random_user_agent()
+            self.headers['User-Agent'] = random_user_agent
 
     def request(self, *args, **kwargs):
         kwargs.setdefault('timeout', getattr(self, 'timeout', None))
