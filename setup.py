@@ -56,7 +56,7 @@ setup(
     keywords='',
     packages=find_packages(),
     install_requires=requires,
-    package_data={'': ['proxytools/superproxy.html']},
+    package_data={'': ['proxytools/superproxy.html', 'proxytools/user_agents.txt']},
     include_package_data=True,
     entry_points={
         'console_scripts': [

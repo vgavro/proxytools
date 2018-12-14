@@ -1,4 +1,5 @@
 import logging
+import os
 import io
 import json
 import enum
@@ -273,9 +274,14 @@ COMMON_USER_AGENTS = [
 ]
 
 
-def get_random_user_agent(user_agents=True):
-    if user_agents is True:
-        return random.choice(COMMON_USER_AGENTS)
+def get_random_user_agent(user_agents=None):
+    # https://techblog.willshouse.com/2012/01/03/most-common-user-agents/
+    # Updated December 14th 2018
+    if user_agents is None:
+        if not hasattr(get_random_user_agent, '_user_agents'):
+            with open(os.path.dirname(__file__) + '/user_agents.txt') as fh:
+                get_random_user_agent._user_agents = fh.readlines()
+        return random.choice(get_random_user_agent._user_agents)
     return random.choice(user_agents)
 
 
