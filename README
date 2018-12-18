@@ -15,10 +15,15 @@ Proxyfetcher recommended dependencies:
 * hard nofile 16384
 # (NOTE: replace "*" with root for root user)
 """
+
+Debian:
 /etc/pam.d/common-session
 /etc/pam.d/common-session-noninteractive
+CentOS:
+/etc/pam.d/login
 """
 session required pam_limits.so
+"""
 
 
 Links:
