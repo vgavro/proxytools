@@ -14,18 +14,25 @@ HTTPBIN_CHECK_URLS = {
     'https': 'https://httpbin.org/get?show_env=1',
 }
 
-
 MOCKBIN_CHECK_URLS = {
     'http': 'http://mockbin.com/request',
     'https': 'https://mockbin.com/request',
 }
 
+TARGET_MOCKBIN_COM = 'mockbin.com'  # slightly faster
+TARGET_HTTPBIN_ORG = 'httpbin.org'
+
 
 class ProxyChecker(AbstractProxyProcessor):
     def __init__(self, proxy=None, pool=None, pool_size=None, blacklist=None,
                  timeout=10, retry_count=0, retry_wait=0,
-                 http_check=True, https_check=True, https_force_check=False, history=0):
+                 http_check=True, https_check=True, https_force_check=False,
+                 target=TARGET_MOCKBIN_COM, history=0):
         super().__init__(proxy, pool, pool_size, blacklist)
+
+        if target not in (TARGET_HTTPBIN_ORG, TARGET_MOCKBIN_COM):
+            raise ValueError('Unknown checker target: %S' % target)
+        self.target = target
 
         self.timeout = timeout
         self.retry_count = retry_count
@@ -97,12 +104,14 @@ class ProxyChecker(AbstractProxyProcessor):
         proxies = {'http': proxy.url, 'https': proxy.url}
         try:
             start_at = time.time()
-            resp = session.get(MOCKBIN_CHECK_URLS[protocol], proxies=proxies)
+            resp = session.get(HTTPBIN_CHECK_URLS[protocol], proxies=proxies)
             resp.raise_for_status()
 
             # TODO: anonymity check for http and fail proxy instead of assert
-            # assert 'origin' in resp.json()  # for httpbin
-            assert 'clientIPAddress' in resp.json()  # for mockbin
+            if self.target == TARGET_HTTPBIN_ORG:
+                assert 'origin' in resp.json(), 'Checker wrong response'
+            elif self.target == TARGET_MOCKBIN_COM:
+                assert 'clientIPAddress' in resp.json(), 'Checker wrong response'
 
         except Exception as exc:
             logger.debug('Check %s fail: %s: %s', protocol, proxy.addr, exc)
