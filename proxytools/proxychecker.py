@@ -8,29 +8,29 @@ from .utils import get_response_speed, repr_response
 
 logger = logging.getLogger(__name__)
 
+MOCKBIN_COM = 'mockbin.com'  # slightly faster
+HTTPBIN_ORG = 'httpbin.org'
 
-HTTPBIN_CHECK_URLS = {
-    'http': 'http://httpbin.org/get?show_env=1',
-    'https': 'https://httpbin.org/get?show_env=1',
+CHECK_URLS = {
+    MOCKBIN_COM: {
+        'http': 'http://mockbin.com/request',
+        'https': 'https://mockbin.com/request',
+    },
+    HTTPBIN_ORG: {
+        'http': 'http://httpbin.org/get?show_env=1',
+        'https': 'https://httpbin.org/get?show_env=1',
+    },
 }
-
-MOCKBIN_CHECK_URLS = {
-    'http': 'http://mockbin.com/request',
-    'https': 'https://mockbin.com/request',
-}
-
-TARGET_MOCKBIN_COM = 'mockbin.com'  # slightly faster
-TARGET_HTTPBIN_ORG = 'httpbin.org'
 
 
 class ProxyChecker(AbstractProxyProcessor):
     def __init__(self, proxy=None, pool=None, pool_size=None, blacklist=None,
                  timeout=10, retry_count=0, retry_wait=0,
                  http_check=True, https_check=True, https_force_check=False,
-                 target=TARGET_MOCKBIN_COM, history=0):
+                 target=MOCKBIN_COM, history=0):
         super().__init__(proxy, pool, pool_size, blacklist)
 
-        if target not in (TARGET_HTTPBIN_ORG, TARGET_MOCKBIN_COM):
+        if target not in (HTTPBIN_ORG, MOCKBIN_COM):
             raise ValueError('Unknown checker target: %S' % target)
         self.target = target
 
@@ -104,13 +104,13 @@ class ProxyChecker(AbstractProxyProcessor):
         proxies = {'http': proxy.url, 'https': proxy.url}
         try:
             start_at = time.time()
-            resp = session.get(HTTPBIN_CHECK_URLS[protocol], proxies=proxies)
+            resp = session.get(CHECK_URLS[self.target][protocol], proxies=proxies)
             resp.raise_for_status()
 
             # TODO: anonymity check for http and fail proxy instead of assert
-            if self.target == TARGET_HTTPBIN_ORG:
+            if self.target == HTTPBIN_ORG:
                 assert 'origin' in resp.json(), 'Checker wrong response'
-            elif self.target == TARGET_MOCKBIN_COM:
+            elif self.target == MOCKBIN_COM:
                 assert 'clientIPAddress' in resp.json(), 'Checker wrong response'
 
         except Exception as exc:

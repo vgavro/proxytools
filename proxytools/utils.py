@@ -279,7 +279,10 @@ def get_random_user_agent(filter_=None):
     # Updated December 14th 2018
     if not hasattr(get_random_user_agent, '_user_agents'):
         with open(os.path.dirname(__file__) + '/user_agents.txt') as fh:
-            get_random_user_agent._user_agents = fh.readlines()
+            get_random_user_agent._user_agents = [
+                x.strip() for x in fh.readlines()
+                if x.strip() and not x.strip().startswith('#')
+            ]
     if filter_:
         return random.choice([ua for ua in get_random_user_agent._user_agents if filter_(ua)])
     return random.choice(get_random_user_agent._user_agents)
