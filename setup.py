@@ -38,7 +38,7 @@ requires = [
 
 setup(
     name='proxytools',
-    version='0.0.2',
+    version='0.0.3',
     description='http://github.com/vgavro/proxytools',
     long_description='http://github.com/vgavro/proxytools',
     license='BSD',
