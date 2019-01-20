@@ -12,10 +12,9 @@ from requests.cookies import RequestsCookieJar
 from requests.adapters import HTTPAdapter
 from requests.sessions import Session
 from requests.utils import select_proxy, urldefragauth
-from gevent import sleep
+from gevent import sleep, GreenletExit
 
 from .exceptions import InsufficientProxies, ProxyMaxRetriesExceeded
-from .superproxy import SUPERPROXY_REQUEST_HEADERS
 from .utils import repr_response, get_random_user_agent
 
 
@@ -308,9 +307,8 @@ class ProxyListMixin:
             exc_ = None  # workaround for "smart" python3 variable clearing
             try:
                 resp = request(*args, **kwargs)
-            except Exception as exc:
-                # NOTE: timeout extends BaseException and should not match
-                if not proxy:
+            except BaseException as exc:
+                if not proxy or isinstance(exc, GreenletExit):
                     raise
 
                 fail_count += 1
@@ -396,6 +394,9 @@ class ProxyListSession(ProxyListMixin, ConfigurableSession):
         # can't easily pass proxy_kwargs there
         kwargs['allow_redirects'] = False
         return super().request(*args, **kwargs)
+
+
+from .superproxy import SUPERPROXY_REQUEST_HEADERS  # noqa
 
 
 class SuperProxySession(ConfigurableSession):

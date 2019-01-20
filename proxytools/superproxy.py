@@ -5,11 +5,13 @@ from itertools import chain
 from base64 import b64decode
 import json
 
+from gevent import Timeout
 from requests.status_codes import _codes, codes
 from pytimeparse.timeparse import timeparse
 import netaddr
 
 from .models import PROXY_RESULT_TYPE
+from .requests import PROXY_MAX_RETRIES_DEFAULT, TIMEOUT_DEFAULT
 from .utils import ResponseMatch, import_string
 
 
@@ -462,9 +464,10 @@ class WSGISuperProxy:
             )
             if key in SUPERPROXY_REQUEST_HEADERS
         }
-
         try:
-            resp = self.session.request(method, url, data=data, headers=headers, **kwargs)
+            with Timeout(kwargs.get('timeout', TIMEOUT_DEFAULT) *
+                         kwargs.get('proxy_max_retries', PROXY_MAX_RETRIES_DEFAULT)):
+                resp = self.session.request(method, url, data=data, headers=headers, **kwargs)
         except BaseException as exc:
             logger.error('%r', exc)
             exc_path = exc.__class__.__module__ + '.' + exc.__class__.__qualname__

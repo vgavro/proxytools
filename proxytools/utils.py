@@ -84,6 +84,7 @@ def create_country_name_to_alpha2():
         'PALESTINIAN TERRITORY': 'PS',
         'COTE D\'IVOIRE': 'CI',
         'MYANMAR [BURMA]': 'MM',
+        'CURACAO': 'CW',
         'UNKNOWN': None,
     })
     for country in countries:
