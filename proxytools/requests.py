@@ -317,6 +317,7 @@ class ProxyListMixin:
                 if persist is True:
                     self._persist_addr = None
                 exclude.append(proxy.addr)
+                logger.debug('Failed proxy %s: %r', proxy.addr, exc.__class__, exc)
                 exc_ = exc  # workaround for "smart" python3 variable clearing
             else:
                 if not proxy:
