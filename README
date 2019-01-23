@@ -4,6 +4,7 @@ Based on gevent and requests.
 TODO: Documentation, readme (README.md) and tests
 
 https://www.proxy-list.download (maybe add fetcher for this)
+https://github.com/clarketm/proxy-list
 
 Proxyfetcher recommended dependencies:
 `apt-get install gocr imagemagick`
