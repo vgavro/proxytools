@@ -397,9 +397,6 @@ class ProxyListSession(ProxyListMixin, ConfigurableSession):
         return super().request(*args, **kwargs)
 
 
-from .superproxy import SUPERPROXY_REQUEST_HEADERS  # noqa
-
-
 class SuperProxySession(ConfigurableSession):
     """
     Session that is using SuperProxy daemon as proxy.
@@ -419,6 +416,9 @@ class SuperProxySession(ConfigurableSession):
                    in [InsufficientProxies, ProxyMaxRetriesExceeded]}
 
     def __init__(self, superproxy_url, proxy_persist=False, adapter={}, **kwargs):
+        from .superproxy import SUPERPROXY_REQUEST_HEADERS  # avoid cycle imports
+        self.SUPERPROXY_REQUEST_HEADERS = SUPERPROXY_REQUEST_HEADERS
+
         self.proxy_kwargs = {k: kwargs.pop(k) for k in tuple(kwargs)
                              if k.startswith('proxy_')}
         self._persist_addr = proxy_persist
@@ -446,7 +446,7 @@ class SuperProxySession(ConfigurableSession):
             if key in ['proxy_timeout', 'proxy_allow_no_proxy']:
                 key = key[6:]
             headers['X-Superproxy-' + key.replace('_', '-').title()] = \
-                SUPERPROXY_REQUEST_HEADERS[key][1](value)
+                self.SUPERPROXY_REQUEST_HEADERS[key][1](value)
 
         resp = super().request(method, url, headers=headers, **kwargs)
         error_cls_name = resp.headers.get('X-Superproxy-Error')
