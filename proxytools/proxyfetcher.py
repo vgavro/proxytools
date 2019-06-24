@@ -150,9 +150,12 @@ class ConcreteProxyFetcher(AbstractProxyProcessor):
 
                 if self.filter(proxy, now=now):
                     proxy.fetch_at = now
-                    if proxy.success_at:
-                        assert now >= proxy.success_at, ('Proxy success_at in future: {}'
-                                                         .format(proxy))
+                    if proxy.success_at and proxy.success_at > now:
+                        # assert now >= proxy.success_at, ('Proxy success_at in future: {}'
+                        #                                  .format(proxy))
+                        logger.warning('Proxy success_at in future: %r', proxy)
+                        proxy.success_at = now
+
                     proxy.fetch_sources.add(self.name)
                     fetched += 1
                     # self.logger.debug('Fetched: %s', proxy.addr)
