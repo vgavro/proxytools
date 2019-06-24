@@ -23,7 +23,8 @@ class SpysOneProxyFetcher(ConcreteProxyFetcher):
 
     def create_session(self, *args, **kwargs):
         kwargs.setdefault('retry_response', lambda r: r.status_code == 503)
-        kwargs.setdefault('retry_count', 1)
+        kwargs.setdefault('retry_count', 3)
+        kwargs.setdefault('retry_wait', 1)  # do we need this if request_wait already 1?
         kwargs.setdefault('request_wait', 1)
         return super().create_session(*args, **kwargs)
 

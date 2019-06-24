@@ -6,7 +6,7 @@ from ..proxyfetcher import ConcreteProxyFetcher, Proxy
 
 class HidemyNameProxyFetcher(ConcreteProxyFetcher):
     # NOTE: looks like working ok only from UA ip?
-    URL = 'https://hidemy.name/en/proxy-list/'
+    URL = 'https://hidemyna.me/en/proxy-list/'
 
     ANONYMITY_MAP = {
         'High': Proxy.ANONYMITY.HIGH,
