@@ -1,5 +1,6 @@
 from lxml import html
 from pytimeparse.timeparse import timeparse
+import cfscrape
 
 from ..proxyfetcher import ConcreteProxyFetcher, Proxy
 
@@ -26,13 +27,16 @@ class HidemyNameProxyFetcher(ConcreteProxyFetcher):
 
         pages = self.pages or self.parse_pages_count(doc)
         for i in range(1, pages):
-            if not self.session.request_wait:
+            if not getattr(self.session, 'request_wait', None):
                 self.spawn(self.page_worker, i * 64)
             else:
                 for p in self.page_worker(i * 64):
                     yield p
         for p in self.parse_proxies(doc):
             yield p
+
+    def create_session(self, proxylist, **params):
+        return cfscrape.create_scraper()
 
     def page_worker(self, start):
         resp = self.session.get(self.URL + '?start={}'.format(start))
