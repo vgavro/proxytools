@@ -13,7 +13,7 @@ requires = [
     'pytimeparse',
     'lxml>=3.7.3',
     'js2py',
-    'cfscrape',
+    'cfscrape',  # note that `node` binary is required
     'cssselect>=1.0.1',  # lxml requirement for css selectors
 
     # cli
