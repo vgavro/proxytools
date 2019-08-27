@@ -253,6 +253,7 @@ class ProxyListMixin:
         except KeyError:
             return None
         if isinstance(match, (tuple, list)):
+            # assert all(callable(v) for v in match)
             return lambda resp: any(cb(resp) for cb in match)
         # assert callable(match)
         return match

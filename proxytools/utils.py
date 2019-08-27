@@ -69,6 +69,19 @@ class ResponseMatch:
     def _from_superproxy_header(cls, data):
         return cls(**json.loads(unquote(data)))
 
+    @classmethod
+    def _list_from_superproxy_header(cls, data):
+        return [cls._from_superproxy_header(data_) for data_ in data.split(',')]
+
+    @classmethod
+    def _list_to_superproxy_header(cls, value):
+        if isinstance(value, cls):
+            return value._to_superproxy_header()
+        elif isinstance(value, (tuple, list)):
+            # assert all(isinstance(v, cls) for v in value)
+            return ','.join(v._to_superproxy_header() for v in value)
+        raise TypeError('ResponseMatch must be instance or list, not {}'. format(type(value)))
+
 
 def create_country_name_to_alpha2():
     # TODO: remove this and use native convert as this PR will be merged:
