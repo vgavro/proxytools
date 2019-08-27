@@ -80,7 +80,7 @@ class ResponseMatch:
         elif isinstance(value, (tuple, list)):
             # assert all(isinstance(v, cls) for v in value)
             return ','.join(v._to_superproxy_header() for v in value)
-        raise TypeError('ResponseMatch must be instance or list, not {}'. format(type(value)))
+        raise TypeError('ResponseMatch must be instance or list, not %s' % type(value))
 
 
 def create_country_name_to_alpha2():
