@@ -308,7 +308,13 @@ class ProxyList:
     def get(self, strategy, persist=None, wait=True, request_ident=None, **proxy_params):
         if not callable(strategy):
             if isinstance(strategy, str):
+                strategy, *strategy_params = strategy.split(':')
                 strategy = getattr(self, GET_STRATEGY[strategy].value)
+                if strategy_params:
+                    strategy_ = strategy
+
+                    def strategy(proxies):
+                        return strategy_(proxies, *strategy_params)
             elif isinstance(strategy, enum.Enum):
                 strategy = getattr(self, strategy.value)
 
@@ -371,16 +377,21 @@ class ProxyList:
         except IndexError:
             return None
 
-    def _get_fastest(self, proxies):
-        for proxy in sorted(proxies.values(), reverse=True,
-                            key=lambda p: p.speed or 0 / (p.in_use + 1)):
-            return proxy
+    def _get_fastest(self, proxies, random_from=1):
+        choice = random.randint(0, int(random_from) - 1)
+        for i, proxy in enumerate(sorted(proxies.values(), reverse=True,
+                                  key=lambda p: p.speed or 0 / (p.in_use + 1))):
+            if i == choice:
+                return proxy
+        return proxy
 
-    def get_fastest(self, **kwargs):
-        return self.get(self._get_fastest, **kwargs)
+    def get_fastest(self, *args, **kwargs):
+        return self.get(self._get_fastest if not args else lambda p: self._get_fastest(p, *args),
+                        **kwargs)
 
-    def get_random(self, **kwargs):
-        return self.get(self._get_random, **kwargs)
+    def get_random(self, *args, **kwargs):
+        return self.get(self._get_random if not args else lambda p: self._get_random(p, *args),
+                        **kwargs)
 
     def get_by_addr(self, addr):
         return self.active_proxies.get(addr) or self.blacklist_proxies.get(addr)
