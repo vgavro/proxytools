@@ -7,7 +7,7 @@ from ..proxyfetcher import ConcreteProxyFetcher, Proxy
 
 class HidemyNameProxyFetcher(ConcreteProxyFetcher):
     # NOTE: looks like working ok only from UA ip?
-    URL = 'https://hidemyna.me/en/proxy-list/'
+    URL = 'https://hidemy.io/en/proxy-list/'
 
     ANONYMITY_MAP = {
         'High': Proxy.ANONYMITY.HIGH,
@@ -44,11 +44,11 @@ class HidemyNameProxyFetcher(ConcreteProxyFetcher):
         return self.parse_proxies(html.fromstring(resp.text))
 
     def parse_pages_count(self, doc):
-        ul = doc.cssselect('div.proxy__pagination ul')[0]
-        return int(ul[-1][0].text)
+        ul = doc.cssselect('.services_proxylist .pagination ul')[0]
+        return int(ul[-1][0].text or ul[-2][0].text)
 
     def parse_proxies(self, doc):
-        tbody = doc.cssselect('table.proxy__t tbody')[0]
+        tbody = doc.cssselect('.services_proxylist .table_block tbody')[0]
         for tr in tbody:
             types = [Proxy.TYPE[t.strip()] for t in tr[4].text.upper().split(',')]
             assert types

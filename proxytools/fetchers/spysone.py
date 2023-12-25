@@ -8,8 +8,8 @@ from ..proxyfetcher import ConcreteProxyFetcher, Proxy
 
 
 class SpysOneProxyFetcher(ConcreteProxyFetcher):
-    COUNTRIES_URL = 'http://spys.one/en/proxy-by-country/'
-    COUNTRY_URL = 'http://spys.one/free-proxy-list/{}/'
+    COUNTRIES_URL = 'https://spys.one/en/proxy-by-country/'
+    COUNTRY_URL = 'https://spys.one/free-proxy-list/{}/'
 
     JS_CONTEXT_REGEXP = re.compile('<script type="text/javascript">'
                                    '(eval\(function\(p\,r\,o\,x\,y\,s\).*?)'
@@ -66,7 +66,7 @@ class SpysOneProxyFetcher(ConcreteProxyFetcher):
         assert counter, 'No proxies found for {}'.format(country)
 
     def _row_parser(self, tr, country, js_context):
-        addr_elem = tr[0][1]
+        addr_elem = tr[0][0]
         assert addr_elem.tag == 'font'
         assert addr_elem[0].tag == 'script'
         ip = addr_elem.text
