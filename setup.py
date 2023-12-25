@@ -61,8 +61,8 @@ setup(
     include_package_data=True,
     entry_points={
         'console_scripts': [
-            'proxyfetcher=proxytools.cli:fetcher',
-            'proxychecker=proxytools.cli:checker',
+            'proxyfetcher=proxytools.cli:proxyfetcher',
+            # 'proxychecker=proxytools.cli:proxychecker',
             'superproxy=proxytools.cli:superproxy',
         ],
     },

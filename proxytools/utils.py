@@ -4,13 +4,16 @@ import io
 import json
 import enum
 import random
-import collections
 from datetime import datetime, date, time
 import time as time_
 from urllib.parse import quote, unquote
 from importlib import import_module
 from shutil import which
-
+try:
+    from collections.abc import Mapping
+except ImportError:
+    # before Python 3.3
+    from collections import Mapping
 
 from gevent.subprocess import run, PIPE
 
@@ -134,7 +137,7 @@ class EntityLoggerAdapter(logging.LoggerAdapter):
 def dict_merge(d, u):
     # https://stackoverflow.com/a/3233356/450103
     for k, v in u.items():
-        if isinstance(v, collections.Mapping):
+        if isinstance(v, Mapping):
             d[k] = dict_merge(d.get(k, {}), v)
         else:
             d[k] = u[k]

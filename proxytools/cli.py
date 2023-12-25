@@ -9,7 +9,11 @@ import http.client
 
 from click import command, option, echo, BadOptionUsage
 import coloredlogs
-import yaml
+try:
+    from yaml import safe_load as yaml_load
+except ImportError:
+    # older yaml
+    from yaml import load as yaml_load
 
 from .utils import dict_merge, JSONEncoder, CompositeContains, import_string
 
@@ -44,15 +48,21 @@ def configure_logging(config):
 
 def load_config(config_filename, override_str, override_key,
                 root_keys=['logging', 'json', 'proxyfetcher', 'proxychecker', 'superproxy']):
-    config = config_filename and yaml.load(open(config_filename)) or {}
+    config = config_filename and yaml_load(open(config_filename)) or {}
     assert isinstance(config, dict), 'Wrong config format'
-    override = yaml.load(override_str)
+    override = yaml_load(override_str)
     assert isinstance(config, dict), 'Wrong override format'
+
+    # TODO: i don't understand why not just use dict_merge(config, override)
+    # keeping it here, assuming i'm more stupid now than before,
+    # but at least some comment needed?
     for key, value in override.items():
         if key in root_keys:
+            config.setdefault(key, {})
             dict_merge(config[key], override[key])
         else:
-            dict_merge(config[override_key], override[key])
+            config.setdefault(override_key, {})
+            dict_merge(config[override_key], override)
     return config
 
 
@@ -109,8 +119,8 @@ def cli(*options):
     option('-s', '--save', required=False,
         help='Save(JSON) proxies to file (stdout by default).')
 )
-def fetcher(config, show_list, fetchers, check, pool_size,
-            https_only, http_check_https, no_socks, save):
+def proxyfetcher(config, show_list, fetchers, check, pool_size,
+                 https_only, http_check_https, no_socks, save):
     from .proxyfetcher import ProxyFetcher
     from .proxychecker import ProxyChecker
 
@@ -151,8 +161,8 @@ def fetcher(config, show_list, fetchers, check, pool_size,
         fetchers_ = ProxyFetcher.registry
     elif fetchers:
         fetchers_ = fetchers.split(',')
-    if not fetchers:
-        raise BadOptionUsage('You should specify fetchers with option or in config.')
+    elif not fetchers_:
+        raise BadOptionUsage('config', 'You should specify fetchers with option or in config.')
 
     types = set(t.upper() for t in
                 conf.pop('types', ['HTTP', 'HTTPS', 'SOCKS4', 'SOCKS5']))
@@ -161,7 +171,7 @@ def fetcher(config, show_list, fetchers, check, pool_size,
     if no_socks:
         types = types.difference(['SOCKS4', 'SOCKS5'])
     if not types:
-        raise BadOptionUsage('Proxy types appears to be empty. '
+        raise BadOptionUsage('config', 'Proxy types appears to be empty. '
                              'Check config and options compability.')
     if pool_size:
         conf['pool_size'] = pool_size
@@ -254,8 +264,10 @@ def superproxy(config, listen, pool_size, stop_timeout, dozer):
                 sys.exit('Multiple exit signals received - aborting.')
         logger.info('Server stopping %s', args)
         server.stop()
-    [gevent.signal(sig, stop) for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)]
 
-    logger.info('Server started')
+    gevent_signal = getattr(gevent.signal, 'signal', gevent.signal)  # compatibility for older gevent
+    [gevent_signal(sig, stop) for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT)]
+
+    logger.info('Server started on %s', listen)
     server.serve_forever()
     logger.debug('Server stopped')
